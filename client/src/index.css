@@ -1,0 +1,35 @@
+@import 'tailwindcss';
+
+/* iSchool × Al Ahly palette. Everything is local: no web fonts or CDNs. */
+@theme {
+  --color-ahly-red: #ea2227;
+  --color-ahly-red-dark: #c4161c;
+  --color-ahly-gold: #d9a428;
+  --color-ahly-gold-light: #f6e7c1;
+  --color-ischool-blue: #056fec;
+  --color-ischool-orange: #ff7f1c;
+  --color-ink: #111111;
+  --color-surface: #f7f7f8;
+
+  --font-sans:
+    'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans Arabic', sans-serif;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  @apply bg-surface text-ink font-sans;
+}
+
+/* Thin brand stripe: Al Ahly red, gold, iSchool blue. */
+.brand-stripe {
+  background: linear-gradient(
+    90deg,
+    var(--color-ahly-red) 0 60%,
+    var(--color-ahly-gold) 60% 85%,
+    var(--color-ischool-blue) 85% 100%
+  );
+}

@@ -1,0 +1,53 @@
+{
+  "name": "ischool-ahly-judging-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "iSchool x Al Ahly Club judging platform (local, offline).",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  },
+  "scripts": {
+    "preinstall": "node scripts/check-node.mjs",
+    "build:shared": "npm run build -w shared",
+    "dev": "npm run build:shared && concurrently --kill-others-on-fail --names api,web --prefix-colors red,blue \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev:server": "npm run build:shared && npm run dev -w server",
+    "dev:client": "npm run build:shared && npm run dev -w client",
+    "build": "npm run build:shared && npm run build -w server && npm run build -w client",
+    "start": "npm run start -w server",
+    "typecheck": "npm run build:shared && npm run typecheck -w server && npm run typecheck -w client",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run build:shared && npm run test -w server && npm run test -w client",
+    "test:db": "npm run build:shared && npm run test:db -w server",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
+    "db:check": "npm run build:shared && npm run db:check -w server",
+    "db:create": "npm run db:create -w server",
+    "db:setup": "npm run build:shared && npm run db:setup -w server --",
+    "db:migrate": "npm run build:shared && npm run db:migrate -w server --",
+    "db:seed": "npm run build:shared && npm run db:seed -w server --",
+    "db:reset": "npm run build:shared && npm run db:reset -w server --",
+    "db:app-user": "npm run build:shared && npm run db:app-user -w server --",
+    "db:backup": "npm run build:shared && npm run db:backup -w server --",
+    "db:restore": "npm run build:shared && npm run db:restore -w server --",
+    "db:restore-check": "npm run build:shared && npm run db:restore-check -w server --",
+    "auth:secret": "npm run auth:secret -w server",
+    "auth:reset-password": "npm run build:shared && npm run auth:reset-password -w server --"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.2.5",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "prettier": "^3.6.2",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.73.0"
+  }
+}

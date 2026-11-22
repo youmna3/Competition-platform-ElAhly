@@ -16,6 +16,7 @@ import {
 
 const EXPECTED_TABLES = [
   'audit_log',
+  'evaluation_events',
   'evaluation_scores',
   'evaluation_section_notes',
   'evaluations',

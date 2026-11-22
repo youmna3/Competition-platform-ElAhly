@@ -20,6 +20,8 @@
     "db:backup": "tsx scripts/db-backup.ts",
     "db:restore": "tsx scripts/db-restore.ts",
     "db:restore-check": "tsx scripts/db-restore-check.ts",
+    "db:demo": "tsx scripts/db-demo.ts",
+    "demo:dev": "tsx scripts/demo-dev.ts",
     "auth:secret": "tsx scripts/auth-secret.ts",
     "auth:reset-password": "tsx scripts/auth-reset-password.ts"
   },

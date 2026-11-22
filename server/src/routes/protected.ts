@@ -7,6 +7,8 @@ import { teamsRouter } from '../teams/routes.js';
 import { rubricAdminRouter } from '../rubric/routes.js';
 import { getPublishedRubric } from '../rubric/service.js';
 import { evaluationsRouter } from '../evaluations/routes.js';
+import { reviewRouter } from '../review/routes.js';
+import { resultsRouter } from '../results/routes.js';
 
 /** GET /api/admin/* — administrators only. */
 export function adminRouter(pool: Pool): Router {
@@ -14,6 +16,8 @@ export function adminRouter(pool: Pool): Router {
   router.use(requireAuth, requireRole('admin'));
   router.use('/users', usersRouter(pool));
   router.use('/rubric', rubricAdminRouter(pool));
+  router.use('/', resultsRouter(pool));
+  router.use('/', reviewRouter(pool));
   router.use('/', teamsRouter(pool));
 
   router.get('/overview', async (_req, res, next) => {
@@ -64,6 +68,7 @@ export function judgeRouter(pool: Pool): Router {
       const [rows] = await pool.query<RowDataPacket[]>(
         `SELECT t.id, t.team_code, t.name, t.project_name, tj.assigned_at, e.status AS evaluation_status,
                 e.required_scored, e.total_score, e.submitted_at, v.version_no,
+                e.reopen_notice_pending, e.reopen_reason,
                 (e.rubric_version_id <> r.published_version_id) AS outdated
          FROM team_judges tj
          JOIN teams t ON t.id = tj.team_id AND t.status = 'active'
@@ -89,6 +94,9 @@ export function judgeRouter(pool: Pool): Router {
         submittedAt: r.submitted_at ? new Date(r.submitted_at).toISOString() : null,
         rubricVersionNo: r.version_no == null ? null : Number(r.version_no),
         outdatedVersion: Boolean(Number(r.outdated ?? 0)),
+        reopenNotice:
+          Boolean(Number(r.reopen_notice_pending ?? 0)) && r.evaluation_status === 'draft',
+        reopenReason: r.reopen_reason == null ? null : String(r.reopen_reason),
       }));
       res.json({ assignments: body });
     } catch (error) {

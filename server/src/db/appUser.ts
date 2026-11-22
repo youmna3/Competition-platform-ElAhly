@@ -14,7 +14,7 @@ export const APP_DELETABLE_TABLES = new Set([
 ]);
 
 /** Tables the app may never update. */
-export const APP_APPEND_ONLY_TABLES = new Set(['audit_log']);
+export const APP_APPEND_ONLY_TABLES = new Set(['audit_log', 'evaluation_events']);
 
 /**
  * Creates (or re-grants) the least-privilege account the API uses at runtime.

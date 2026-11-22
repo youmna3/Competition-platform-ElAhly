@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import {
@@ -232,6 +232,10 @@ function emptyEvaluation(rubric: RubricVersion): EvaluationDetail {
     submittedAt: null,
     createdAt: '',
     updatedAt: '',
+    reopenedCount: 0,
+    reopenedAt: null,
+    reopenReason: null,
+    reopenNoticePending: false,
     overallNotes: '',
     ratings: rubric.sections.flatMap((s) =>
       s.criteria.map((c) => ({ criterionId: c.id, rating: null, note: '' })),
@@ -248,7 +252,7 @@ function BackLink() {
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+export function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-xs font-semibold tracking-wide text-black/50 uppercase">{label}</p>
@@ -257,7 +261,7 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RubricIntro({ rubric }: { rubric: RubricVersion }) {
+export function RubricIntro({ rubric }: { rubric: RubricVersion }) {
   return (
     <Card className="space-y-2">
       <p className="text-xs font-semibold tracking-wide text-black/50 uppercase">
@@ -316,7 +320,7 @@ function NoteField({
   );
 }
 
-function ScoringForm({
+export function ScoringForm({
   rubric,
   input,
   onChange,
@@ -500,6 +504,14 @@ function EditableEvaluation({
   });
   const [missing, setMissing] = useState<Set<number> | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // Tell the server the judge has now seen that this evaluation was reopened.
+  useEffect(() => {
+    if (evaluation.reopenNoticePending) {
+      void api(`/api/judge/evaluations/${evaluation.id}/acknowledge-reopen`, {
+        method: 'POST',
+      }).catch(() => {});
+    }
+  }, [evaluation.id, evaluation.reopenNoticePending]);
   useUnsavedChangesGuard(
     dirty || state.kind !== 'saved',
     'Your latest changes are not saved yet. Leave anyway?',
@@ -535,6 +547,17 @@ function EditableEvaluation({
 
   return (
     <>
+      {evaluation.reopenedAt && evaluation.reopenedCount > 0 && (
+        <Alert tone="warning" title="An administrator reopened this evaluation">
+          <p>
+            Reopened {formatDateTime(evaluation.reopenedAt)}. Reason: “{evaluation.reopenReason}”.
+          </p>
+          <p className="mt-1">
+            Make your changes and submit it again. Until then it doesn’t count as submitted. Your
+            previous submission is kept in the history.
+          </p>
+        </Alert>
+      )}
       {backup && (
         <Alert tone="warning" title="Unsaved changes were found on this device">
           <p>

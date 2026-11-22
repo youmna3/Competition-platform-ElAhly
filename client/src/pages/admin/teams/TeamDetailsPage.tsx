@@ -169,6 +169,46 @@ export function TeamDetailsPage() {
             </dd>
           </div>
         </dl>
+        <dl className="mt-4 grid gap-4 border-t border-black/5 pt-4 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+              Provisional average
+            </dt>
+            <dd className="mt-1 text-lg font-bold tabular-nums">
+              {team.provisionalAverage != null ? formatScore(team.provisionalAverage) : '—'}
+              {team.provisionalAverage != null && (
+                <span className="text-sm font-normal text-black/55"> / 100</span>
+              )}
+            </dd>
+            <dd className="text-xs text-black/50">
+              Submitted scores of assigned judges. Not an official result.
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+              Results readiness
+            </dt>
+            <dd className="mt-1">
+              {team.readyForResults ? (
+                <Badge tone="green">Ready: all judges submitted, one rubric version</Badge>
+              ) : (
+                <Badge tone="gray">
+                  {team.assignedJudges === 0
+                    ? 'No judges assigned'
+                    : team.submittedEvaluations < team.assignedJudges
+                      ? `Waiting for ${team.assignedJudges - team.submittedEvaluations} judge${team.assignedJudges - team.submittedEvaluations === 1 ? '' : 's'}`
+                      : 'Rubric versions differ'}
+                </Badge>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+              Last update
+            </dt>
+            <dd className="mt-1 font-medium">{formatDate(team.lastUpdatedAt)}</dd>
+          </div>
+        </dl>
       </Card>
 
       {team.mixedVersions && (
@@ -239,6 +279,20 @@ export function TeamDetailsPage() {
                     {a.submittedAt && (
                       <p className="text-xs text-black/50">{formatDate(a.submittedAt)}</p>
                     )}
+                    {a.rubricVersionNo != null && a.weights && (
+                      <p className="text-xs text-black/50">
+                        v{a.rubricVersionNo} · weights {a.weights.join('/')}%
+                      </p>
+                    )}
+                    {a.evaluationId != null && (
+                      <Link
+                        to={`/admin/evaluations/${a.evaluationId}`}
+                        className="text-xs font-semibold text-ischool-blue hover:underline"
+                        aria-label={`Review ${a.fullName}’s evaluation`}
+                      >
+                        Review →
+                      </Link>
+                    )}
                   </div>
                   <Button
                     variant="ghost"
@@ -282,6 +336,13 @@ export function TeamDetailsPage() {
                       Rubric v{p.rubricVersionNo}
                       {p.totalScore != null && ` · score ${formatScore(p.totalScore)} / 100`}
                     </p>
+                    <Link
+                      to={`/admin/evaluations/${p.evaluationId}`}
+                      className="text-xs font-semibold text-ischool-blue hover:underline"
+                      aria-label={`Review ${p.fullName}’s evaluation`}
+                    >
+                      Review →
+                    </Link>
                   </div>
                 </li>
               ))}

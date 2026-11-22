@@ -86,6 +86,12 @@ export function AppLayout() {
                 <NavLink to="/admin/teams" className={navClass}>
                   Teams
                 </NavLink>
+                <NavLink to="/admin/evaluations" className={navClass}>
+                  Evaluations
+                </NavLink>
+                <NavLink to="/admin/leaderboard" className={navClass}>
+                  Leaderboard
+                </NavLink>
                 <NavLink to="/admin/rubric" className={navClass}>
                   Rubric
                 </NavLink>

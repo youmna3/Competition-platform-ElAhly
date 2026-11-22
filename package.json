@@ -37,6 +37,8 @@
     "db:backup": "npm run build:shared && npm run db:backup -w server --",
     "db:restore": "npm run build:shared && npm run db:restore -w server --",
     "db:restore-check": "npm run build:shared && npm run db:restore-check -w server --",
+    "db:demo": "npm run build:shared && npm run db:demo -w server --",
+    "demo:dev": "npm run demo:dev -w server",
     "auth:secret": "npm run auth:secret -w server",
     "auth:reset-password": "npm run build:shared && npm run auth:reset-password -w server --"
   },

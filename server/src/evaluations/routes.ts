@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { EVALUATION_LIMITS as L } from '@judging/shared';
 import type { Actor } from '../teams/service.js';
 import {
+  acknowledgeReopen,
   getJudgeEvaluation,
   saveEvaluation,
   startEvaluation,
@@ -87,6 +88,13 @@ export function evaluationsRouter(pool: Pool): Router {
     const parsed = submitSchema.safeParse(req.body);
     if (!parsed.success) return invalid(res, parsed.error);
     res.json(await submitEvaluation(pool, actorOf(req), evaluationId.data, parsed.data.rowVersion));
+  });
+
+  router.post('/evaluations/:id/acknowledge-reopen', async (req, res) => {
+    const evaluationId = id.safeParse(req.params.id);
+    if (!evaluationId.success) return invalid(res, evaluationId.error);
+    await acknowledgeReopen(pool, actorOf(req), evaluationId.data);
+    res.status(204).end();
   });
 
   return router;

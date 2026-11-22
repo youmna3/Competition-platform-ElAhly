@@ -68,6 +68,10 @@ export interface TeamAssignment {
   rubricVersionNo: number | null;
   /** The evaluation uses an older rubric version than the published one. */
   outdatedVersion: boolean;
+  evaluationId: number | null;
+  /** Section weights of the rubric version this evaluation uses. */
+  weights: number[] | null;
+  updatedAt: string | null;
 }
 
 /** An evaluation kept from a judge who is no longer assigned (history is never deleted). */
@@ -79,6 +83,7 @@ export interface PastEvaluation {
   submittedAt: string | null;
   totalScore: number | null;
   rubricVersionNo: number;
+  evaluationId: number;
 }
 
 export interface TeamDetails extends TeamSummary {
@@ -86,6 +91,11 @@ export interface TeamDetails extends TeamSummary {
   createdByEmail: string | null;
   assignments: TeamAssignment[];
   pastEvaluations: PastEvaluation[];
+  /** Average of assigned judges' submitted scores; provisional, not an official result. */
+  provisionalAverage: number | null;
+  /** Every assigned judge has submitted on the same rubric version. */
+  readyForResults: boolean;
+  lastUpdatedAt: string | null;
 }
 
 export interface TeamInput {

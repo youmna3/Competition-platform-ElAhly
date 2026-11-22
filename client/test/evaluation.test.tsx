@@ -85,6 +85,10 @@ function evaluation(
     submittedAt: null,
     createdAt: '2026-11-22T10:00:00.000Z',
     updatedAt: '2026-11-22T10:00:00.000Z',
+    reopenedCount: 0,
+    reopenedAt: null,
+    reopenReason: null,
+    reopenNoticePending: false,
     overallNotes: '',
     ratings: criteria.map((c, i) => ({ criterionId: c.id, rating: stars[i] ?? null, note: '' })),
     sectionNotes: r.sections.map((s) => ({ sectionId: s.id, note: '' })),
@@ -214,6 +218,8 @@ describe('My Teams', () => {
       submittedAt: null,
       rubricVersionNo: 1,
       outdatedVersion: false,
+      reopenNotice: false,
+      reopenReason: null,
     };
     const assignments: JudgeAssignment[] = [
       {

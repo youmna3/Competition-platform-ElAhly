@@ -13,6 +13,10 @@ import { TeamDetailsPage } from './pages/admin/teams/TeamDetailsPage';
 import { RubricManagementPage } from './pages/admin/rubric/RubricManagementPage';
 import { ViewRubricPage } from './pages/rubric/ViewRubricPage';
 import { EvaluationPage } from './pages/judge/EvaluationPage';
+import { EvaluationsPage } from './pages/admin/evaluations/EvaluationsPage';
+import { JudgeProgressPage } from './pages/admin/evaluations/JudgeProgressPage';
+import { EvaluationReviewPage } from './pages/admin/evaluations/EvaluationReviewPage';
+import { LeaderboardPage } from './pages/admin/results/LeaderboardPage';
 
 export default function App() {
   return (
@@ -63,6 +67,38 @@ export default function App() {
           element={
             <RequireAuth roles={['admin']}>
               <TeamDetailsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/evaluations"
+          element={
+            <RequireAuth roles={['admin']}>
+              <EvaluationsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/evaluations/progress"
+          element={
+            <RequireAuth roles={['admin']}>
+              <JudgeProgressPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/evaluations/:id"
+          element={
+            <RequireAuth roles={['admin']}>
+              <EvaluationReviewPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/leaderboard"
+          element={
+            <RequireAuth roles={['admin']}>
+              <LeaderboardPage />
             </RequireAuth>
           }
         />

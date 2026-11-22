@@ -48,3 +48,5 @@ export * from './auth.js';
 export * from './users.js';
 export * from './teams.js';
 export * from './evaluations.js';
+export * from './review.js';
+export * from './results.js';

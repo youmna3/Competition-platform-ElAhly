@@ -10,6 +10,7 @@ import {
   type EvaluationStatus,
   type JudgeEvaluationResponse,
   type RubricVersion,
+  type SubmissionSnapshot,
   type SubmitEvaluationResponse,
   type TeamStatus,
 } from '@judging/shared';
@@ -70,7 +71,7 @@ async function publishedVersionId(db: Db): Promise<number | null> {
   return rows[0]?.published_version_id == null ? null : Number(rows[0].published_version_id);
 }
 
-async function loadEvaluation(db: Db, id: number): Promise<EvaluationDetail | null> {
+export async function loadEvaluation(db: Db, id: number): Promise<EvaluationDetail | null> {
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT e.*, v.version_no FROM evaluations e
      JOIN rubric_versions v ON v.id = e.rubric_version_id WHERE e.id = ?`,
@@ -109,6 +110,10 @@ async function loadEvaluation(db: Db, id: number): Promise<EvaluationDetail | nu
     submittedAt: iso(e.submitted_at),
     createdAt: iso(e.created_at)!,
     updatedAt: iso(e.updated_at)!,
+    reopenedCount: Number(e.reopened_count ?? 0),
+    reopenedAt: iso(e.reopened_at),
+    reopenReason: e.reopen_reason == null ? null : String(e.reopen_reason),
+    reopenNoticePending: Boolean(e.reopen_notice_pending),
     overallNotes: String(e.overall_notes ?? ''),
     ratings: scores.map((s) => ({
       criterionId: Number(s.criterion_id),
@@ -180,6 +185,73 @@ function computeScores(rubric: RubricVersion, ratingOf: Map<number, number | nul
     total: breakdown.total ?? Math.round(partial * 1000) / 1000,
     complete: breakdown.total != null,
     ratedCount,
+  };
+}
+
+/** Draft revisions are recorded at most this often, so autosave can't flood the history. */
+const DRAFT_EVENT_INTERVAL_MINUTES = 10;
+
+interface EventInput {
+  evaluationId: number;
+  event: 'started' | 'draft_saved' | 'submitted' | 'resubmitted';
+  actor: Actor;
+  rubricVersionId: number;
+  rowVersion: number;
+  ratedCount?: number;
+  totalScore?: number | null;
+  previousScore?: number | null;
+  snapshot?: SubmissionSnapshot | null;
+}
+
+export async function recordEvent(conn: PoolConnection, e: EventInput) {
+  await conn.query(
+    `INSERT INTO evaluation_events (evaluation_id, event, actor_id, actor_email, rubric_version_id, row_version,
+       rated_count, total_score, previous_score, snapshot)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      e.evaluationId,
+      e.event,
+      e.actor.id,
+      e.actor.email,
+      e.rubricVersionId,
+      e.rowVersion,
+      e.ratedCount ?? 0,
+      e.totalScore ?? null,
+      e.previousScore ?? null,
+      e.snapshot ? JSON.stringify(e.snapshot) : null,
+    ],
+  );
+}
+
+/** The immutable record of what was submitted: every rating and note, with the scores. */
+function snapshotOf(
+  rubric: RubricVersion,
+  evaluation: EvaluationDetail,
+  total: number,
+): SubmissionSnapshot {
+  const byId = new Map(evaluation.ratings.map((r) => [r.criterionId, r]));
+  const notes = new Map(evaluation.sectionNotes.map((n) => [n.sectionId, n.note]));
+  const matrix = rubric.sections.map((s) => s.criteria.map((c) => byId.get(c.id)?.rating ?? null));
+  const breakdown = scoreEvaluation(rubric.sections, matrix);
+  return {
+    totalScore: total,
+    sections: rubric.sections.map((s, i) => ({
+      sectionId: s.id,
+      title: s.title,
+      weightPercent: s.weightPercent ?? 0,
+      score: breakdown.sections[i]?.score ?? 0,
+      note: notes.get(s.id) ?? '',
+    })),
+    ratings: rubric.sections.flatMap((s) =>
+      s.criteria.map((c) => ({
+        criterionId: c.id,
+        sectionId: s.id,
+        title: c.title,
+        rating: byId.get(c.id)?.rating ?? 0,
+        note: byId.get(c.id)?.note ?? '',
+      })),
+    ),
+    overallNotes: evaluation.overallNotes,
   };
 }
 
@@ -275,6 +347,13 @@ export function startEvaluation(pool: Pool, actor: Actor, teamId: number) {
       'INSERT INTO evaluation_section_notes (evaluation_id, rubric_version_id, section_id) VALUES ?',
       [rubric.sections.map((s) => [id, publishedId, s.id])],
     );
+    await recordEvent(conn, {
+      evaluationId: id,
+      event: 'started',
+      actor,
+      rubricVersionId: publishedId,
+      rowVersion: 1,
+    });
     await writeAudit(conn, {
       actorId: actor.id,
       actorEmail: actor.email,
@@ -354,10 +433,29 @@ export function saveEvaluation(
     }
     await conn.query(
       `UPDATE evaluations SET core_score = ?, bonus_score = 0, total_score = ?, required_scored = ?,
-         required_count = ?, overall_notes = ?, row_version = row_version + 1 WHERE id = ?`,
+         required_count = ?, overall_notes = ?, row_version = row_version + 1,
+         save_count = save_count + 1, last_saved_at = NOW() WHERE id = ?`,
       [total, total, ratedCount, REQUIRED, input.overallNotes || null, id],
     );
-    return (await loadEvaluation(conn, id))!;
+    // A draft revision in the history, at most every few minutes.
+    const [recent] = await conn.query<RowDataPacket[]>(
+      `SELECT 1 FROM evaluation_events WHERE evaluation_id = ? AND event IN ('draft_saved', 'started', 'reopened')
+         AND created_at > NOW() - INTERVAL ? MINUTE LIMIT 1`,
+      [id, DRAFT_EVENT_INTERVAL_MINUTES],
+    );
+    const saved = (await loadEvaluation(conn, id))!;
+    if (!recent.length) {
+      await recordEvent(conn, {
+        evaluationId: id,
+        event: 'draft_saved',
+        actor,
+        rubricVersionId: versionId,
+        rowVersion: saved.rowVersion,
+        ratedCount,
+        totalScore: total,
+      });
+    }
+    return saved;
   });
 }
 
@@ -396,14 +494,32 @@ export function submitEvaluation(
 
     await conn.query(
       `UPDATE evaluations SET status = 'submitted', submitted_at = NOW(), core_score = ?, bonus_score = 0,
-         total_score = ?, required_scored = ?, required_count = ?, row_version = row_version + 1
+         total_score = ?, required_scored = ?, required_count = ?, row_version = row_version + 1,
+         reopen_notice_pending = FALSE
        WHERE id = ? AND status = 'draft'`,
       [total, total, ratedCount, REQUIRED, id],
     );
+    const resubmission = current.reopenedCount > 0;
+    const [previous] = await conn.query<RowDataPacket[]>(
+      `SELECT total_score FROM evaluation_events WHERE evaluation_id = ? AND event IN ('submitted', 'resubmitted')
+       ORDER BY id DESC LIMIT 1`,
+      [id],
+    );
+    await recordEvent(conn, {
+      evaluationId: id,
+      event: resubmission ? 'resubmitted' : 'submitted',
+      actor,
+      rubricVersionId: Number(row.rubric_version_id),
+      rowVersion: Number(row.row_version) + 1,
+      ratedCount,
+      totalScore: total,
+      previousScore: previous[0]?.total_score == null ? null : Number(previous[0].total_score),
+      snapshot: snapshotOf(rubric, current, total),
+    });
     await writeAudit(conn, {
       actorId: actor.id,
       actorEmail: actor.email,
-      action: 'evaluation.submitted',
+      action: resubmission ? 'evaluation.resubmitted' : 'evaluation.submitted',
       entityType: 'evaluation',
       entityId: id,
       ipAddress: actor.ip,
@@ -416,4 +532,13 @@ export function submitEvaluation(
     });
     return { evaluation: (await loadEvaluation(conn, id))!, alreadySubmitted: false };
   });
+}
+
+/** The judge has seen that their evaluation was reopened (clears the notice). */
+export async function acknowledgeReopen(pool: Pool, actor: Actor, id: number) {
+  await pool.query(
+    `UPDATE evaluations SET reopen_notice_pending = FALSE
+     WHERE id = ? AND judge_id = ? AND status = 'draft' AND reopen_notice_pending = TRUE`,
+    [id, actor.id],
+  );
 }

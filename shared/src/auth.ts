@@ -74,4 +74,7 @@ export interface JudgeAssignment {
   /** Rubric version the evaluation uses, and whether it is older than the published one. */
   rubricVersionNo: number | null;
   outdatedVersion: boolean;
+  /** An administrator reopened this evaluation and the judge hasn't opened it since. */
+  reopenNotice: boolean;
+  reopenReason: string | null;
 }

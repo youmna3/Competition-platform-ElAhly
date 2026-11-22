@@ -49,6 +49,12 @@ export interface EvaluationDetail extends EvaluationInput {
   submittedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Times an administrator reopened it, and the latest reopening. */
+  reopenedCount: number;
+  reopenedAt: string | null;
+  reopenReason: string | null;
+  /** The judge hasn't seen the latest reopening yet. */
+  reopenNoticePending: boolean;
 }
 
 export interface EvaluationTeam {

@@ -33,7 +33,14 @@ export function describeDatabaseError(
   error: unknown,
   db: Pick<AppConfig['db'], 'host' | 'port' | 'user' | 'database'>,
 ): { code: string; message: string; hint: string } {
-  const { code = 'UNKNOWN', message = 'Unknown database error' } = (error ?? {}) as DriverError;
+  const raw = (error ?? {}) as DriverError;
+  const message = raw.message ?? 'Unknown database error';
+  // MariaDB answers an unknown account with 1698 on some setups and 1045 on
+  // others; both mean the login was rejected, so report them the same way.
+  const code =
+    raw.code === 'ER_ACCESS_DENIED_NO_PASSWORD_ERROR'
+      ? 'ER_ACCESS_DENIED_ERROR'
+      : (raw.code ?? 'UNKNOWN');
   const hints: Record<string, string> = {
     ECONNREFUSED: `Nothing is listening on ${db.host}:${db.port}. Start MySQL in the XAMPP Control Panel.`,
     ETIMEDOUT: `Connection to ${db.host}:${db.port} timed out. Check that MySQL is running in XAMPP and DB_HOST/DB_PORT are correct.`,

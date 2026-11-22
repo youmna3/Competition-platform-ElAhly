@@ -64,6 +64,7 @@ export function JudgeTeamsPage() {
   const assignments = query.data?.assignments ?? [];
   const submitted = assignments.filter((a) => a.evaluationStatus === 'submitted').length;
   const notPublished = rubric.data != null && rubric.data.rubric == null;
+  const reopened = assignments.filter((a) => a.reopenNotice);
 
   return (
     <div className="space-y-6">
@@ -84,6 +85,21 @@ export function JudgeTeamsPage() {
       </div>
       {passwordChanged && (
         <Alert tone="success">Your password was changed. Other devices have been signed out.</Alert>
+      )}
+      {reopened.length > 0 && (
+        <Alert tone="warning" title="An administrator reopened your evaluation">
+          <ul className="space-y-1">
+            {reopened.map((a) => (
+              <li key={a.teamId}>
+                <Link to={`/judge/teams/${a.teamId}`} className="font-semibold underline">
+                  {a.teamCode} · {a.teamName}
+                </Link>
+                {a.reopenReason && <> — “{a.reopenReason}”</>}. Please review it and submit it
+                again.
+              </li>
+            ))}
+          </ul>
+        </Alert>
       )}
       {notPublished && (
         <Alert tone="info" title="Judging hasn’t started yet">
@@ -146,6 +162,11 @@ export function JudgeTeamsPage() {
                       <Badge tone={STATUS[a.evaluationStatus].tone}>
                         {STATUS[a.evaluationStatus].label}
                       </Badge>
+                      {a.reopenNotice && (
+                        <span className="ml-1">
+                          <Badge tone="red">Reopened</Badge>
+                        </span>
+                      )}
                       {a.outdatedVersion && (
                         <span className="ml-1">
                           <Badge tone="gold">Older rubric v{a.rubricVersionNo}</Badge>

@@ -125,6 +125,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await pool.query('SET FOREIGN_KEY_CHECKS = 0');
   for (const t of [
+    'evaluation_events',
     'evaluation_section_notes',
     'evaluation_scores',
     'evaluations',

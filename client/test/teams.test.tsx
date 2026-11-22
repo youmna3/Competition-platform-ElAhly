@@ -313,6 +313,8 @@ describe('Judge "My teams"', () => {
         submittedAt: null,
         rubricVersionNo: null,
         outdatedVersion: false,
+        reopenNotice: false,
+        reopenReason: null,
       },
     ];
     mockApi(judgeUser, (c) =>

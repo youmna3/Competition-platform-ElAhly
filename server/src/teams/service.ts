@@ -146,6 +146,7 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
   const [assignments] = await db.query<RowDataPacket[]>(
     `SELECT u.id, u.full_name, u.email, u.role, u.status, tj.assigned_at, ab.email AS assigned_by_email,
             e.status AS evaluation_status, e.submitted_at, e.required_scored, e.total_score,
+            e.id AS evaluation_id, e.updated_at AS evaluation_updated_at, e.rubric_version_id,
             v.version_no, (e.rubric_version_id <> r.published_version_id) AS outdated
      FROM team_judges tj
      JOIN users u ON u.id = tj.judge_id
@@ -158,7 +159,7 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
     [id],
   );
   const [past] = await db.query<RowDataPacket[]>(
-    `SELECT u.id, u.full_name, u.email, e.status, e.submitted_at, e.total_score, v.version_no
+    `SELECT u.id, u.full_name, u.email, e.status, e.submitted_at, e.total_score, v.version_no, e.id AS evaluation_id
      FROM evaluations e JOIN users u ON u.id = e.judge_id
      JOIN rubric_versions v ON v.id = e.rubric_version_id
      WHERE e.team_id = ?
@@ -167,8 +168,45 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
     [id],
   );
 
+  // Section weights of every rubric version these evaluations use.
+  const versionIds = [
+    ...new Set(
+      assignments
+        .filter((a) => a.rubric_version_id != null)
+        .map((a) => Number(a.rubric_version_id)),
+    ),
+  ];
+  const weightsOf = new Map<number, number[]>();
+  if (versionIds.length) {
+    const [w] = await db.query<RowDataPacket[]>(
+      'SELECT rubric_version_id, weight_percent FROM rubric_sections WHERE rubric_version_id IN (?) ORDER BY rubric_version_id, position',
+      [versionIds],
+    );
+    for (const row of w) {
+      const key = Number(row.rubric_version_id);
+      weightsOf.set(key, [...(weightsOf.get(key) ?? []), Number(row.weight_percent)]);
+    }
+  }
+  const submittedRows = assignments.filter((a) => a.evaluation_status === 'submitted');
+  const submittedVersions = new Set(submittedRows.map((a) => Number(a.rubric_version_id)));
+  const updates = assignments
+    .map((a) => (a.evaluation_updated_at ? new Date(a.evaluation_updated_at).getTime() : 0))
+    .filter(Boolean);
+
   return {
     ...toSummary(team),
+    provisionalAverage: submittedRows.length
+      ? Math.round(
+          (submittedRows.reduce((sum, a) => sum + Number(a.total_score), 0) /
+            submittedRows.length) *
+            1000,
+        ) / 1000
+      : null,
+    readyForResults:
+      assignments.length > 0 &&
+      submittedRows.length === assignments.length &&
+      submittedVersions.size === 1,
+    lastUpdatedAt: updates.length ? new Date(Math.max(...updates)).toISOString() : null,
     archiveReason: team.archive_reason ? String(team.archive_reason) : null,
     createdByEmail: team.created_by_email ? String(team.created_by_email) : null,
     assignments: assignments.map((a) => ({
@@ -185,6 +223,10 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
       totalScore: a.evaluation_status === 'submitted' ? Number(a.total_score) : null,
       rubricVersionNo: a.version_no == null ? null : Number(a.version_no),
       outdatedVersion: Boolean(Number(a.outdated ?? 0)),
+      evaluationId: a.evaluation_id == null ? null : Number(a.evaluation_id),
+      weights:
+        a.rubric_version_id == null ? null : (weightsOf.get(Number(a.rubric_version_id)) ?? null),
+      updatedAt: iso(a.evaluation_updated_at),
     })),
     pastEvaluations: past.map((p) => ({
       judgeId: Number(p.id),
@@ -194,6 +236,7 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
       submittedAt: iso(p.submitted_at),
       totalScore: p.status === 'submitted' ? Number(p.total_score) : null,
       rubricVersionNo: Number(p.version_no),
+      evaluationId: Number(p.evaluation_id),
     })),
   };
 }

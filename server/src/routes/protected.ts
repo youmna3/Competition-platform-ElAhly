@@ -4,12 +4,16 @@ import type { AdminOverview, JudgeAssignment, RubricState } from '@judging/share
 import { requireAuth, requireRole } from '../auth/middleware.js';
 import { usersRouter } from '../users/routes.js';
 import { teamsRouter } from '../teams/routes.js';
+import { rubricAdminRouter } from '../rubric/routes.js';
+import { getPublishedRubric } from '../rubric/service.js';
+import { evaluationsRouter } from '../evaluations/routes.js';
 
 /** GET /api/admin/* — administrators only. */
 export function adminRouter(pool: Pool): Router {
   const router = Router();
   router.use(requireAuth, requireRole('admin'));
   router.use('/users', usersRouter(pool));
+  router.use('/rubric', rubricAdminRouter(pool));
   router.use('/', teamsRouter(pool));
 
   router.get('/overview', async (_req, res, next) => {
@@ -48,13 +52,24 @@ export function judgeRouter(pool: Pool): Router {
   const router = Router();
   router.use(requireAuth, requireRole('judge', 'admin'));
 
+  /** The published rubric, read-only. null until an administrator publishes one. */
+  router.get('/rubric', async (_req, res) => {
+    res.json({ rubric: await getPublishedRubric(pool) });
+  });
+
+  router.use('/', evaluationsRouter(pool));
+
   router.get('/assignments', async (req, res, next) => {
     try {
       const [rows] = await pool.query<RowDataPacket[]>(
-        `SELECT t.id, t.team_code, t.name, t.project_name, tj.assigned_at, e.status AS evaluation_status
+        `SELECT t.id, t.team_code, t.name, t.project_name, tj.assigned_at, e.status AS evaluation_status,
+                e.required_scored, e.total_score, e.submitted_at, v.version_no,
+                (e.rubric_version_id <> r.published_version_id) AS outdated
          FROM team_judges tj
          JOIN teams t ON t.id = tj.team_id AND t.status = 'active'
+         JOIN rubric r ON r.id = 1
          LEFT JOIN evaluations e ON e.team_id = t.id AND e.judge_id = tj.judge_id
+         LEFT JOIN rubric_versions v ON v.id = e.rubric_version_id
          WHERE tj.judge_id = ?
          ORDER BY t.team_code`,
         [req.user!.id],
@@ -68,6 +83,12 @@ export function judgeRouter(pool: Pool): Router {
         evaluationStatus: r.evaluation_status
           ? (r.evaluation_status as 'draft' | 'submitted')
           : 'not_started',
+        ratedCount: Number(r.required_scored ?? 0),
+        requiredCount: 8,
+        totalScore: r.evaluation_status === 'submitted' ? Number(r.total_score) : null,
+        submittedAt: r.submitted_at ? new Date(r.submitted_at).toISOString() : null,
+        rubricVersionNo: r.version_no == null ? null : Number(r.version_no),
+        outdatedVersion: Boolean(Number(r.outdated ?? 0)),
       }));
       res.json({ assignments: body });
     } catch (error) {

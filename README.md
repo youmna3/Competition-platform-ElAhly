@@ -3,11 +3,11 @@
 A local, offline judging platform for the iSchool × Al Ahly Club competition. It runs on one Windows
 computer with Node.js 24 LTS and XAMPP MySQL. No cloud services, CDNs or external accounts are used.
 
-**Status: Phase 4 (teams and judge assignments) is complete.** Administrators manage teams on the
-**Teams** page: add, edit, archive and reactivate them, import many at once from Excel or CSV, and
-assign judges to one team or to many teams at once. Judges see their assigned teams under **My
-assigned teams**. Scoring opens in Phase 6. Teams are never deleted, only archived, and every change
-is recorded in the audit log. The rubric remains **Not configured** until Rubric Management (Phase 5).
+**Status: Phase 6 (judging and scoring) is complete.** Judges, and administrators assigned to teams,
+open a team from **My teams** and rate its 8 criteria with five-star controls. Section scores and the final
+score out of 100 update as they rate. Drafts save automatically, and submitting locks the evaluation.
+The server recomputes every score. Administrators see each judge's progress and score on the team's
+page. Earlier phases: users (3), teams and assignments (4), Rubric Management (5).
 
 ---
 
@@ -89,6 +89,31 @@ confusing errors later.
 
    Copy the four lines it prints into `server\.env` (they keep `root` only for setup and
    backups), restart the API, and run `npm run db:check` again.
+
+### Upgrading from Phase 5
+
+```powershell
+npm install
+npm run db:backup
+npm run db:migrate
+```
+
+`db:migrate` applies `008_evaluations_access.sql`. It replaces one trigger so the database also refuses
+new evaluations for archived teams and disabled accounts. Existing data is not changed.
+
+### Upgrading from Phase 4
+
+```powershell
+npm install
+npm run db:backup
+npm run db:migrate
+```
+
+`db:migrate` applies `007_rubric_management.sql`. It only adds columns (rubric description, section
+weight, criterion guidelines, a draft revision counter) and database rules: at most one published
+version and one draft, published versions can't change, and publishing requires exactly 4 sections of 2
+criteria rated 1–5 stars, with section weights that total 100%. Existing data is not changed. The
+rubric stays **Not configured** until you build and publish it.
 
 ### Upgrading from Phase 3
 
@@ -217,6 +242,59 @@ Open **Teams** in the top navigation.
 - The import is all-or-nothing: if anything fails, nothing is saved.
 - Only the first sheet is read. Extra columns are ignored and listed. Up to 2000 teams per file.
 
+### Rubric Management (administrators)
+
+Open **Rubric** in the top navigation.
+
+- **Not configured**: press **Start building the rubric**. A draft opens with 4 sections of 2 criteria,
+  named "Section 1", "Criterion 1" and so on, and no weights. Nothing about the competition is filled
+  in for you.
+- **Edit**: the rubric title, description and instructions for judges; each section's title and
+  description; each criterion's title, description and judging guidelines. The number of sections and
+  criteria is fixed.
+- **Section weights**: use the slider or type a whole-number percentage. The total shows live as
+  "x% / 100%". It must be exactly 100% to publish.
+- **Scoring**: section score = (criterion 1 + criterion 2) ÷ 2 ÷ 5 × section weight. The final score is
+  the four section scores added together, out of 100. Example: 4★ and 5★ in a 30% section give 27.
+- **Save draft** stores your work. The page warns you before you leave with unsaved changes. If someone
+  else saved the draft meanwhile, you are told to reload instead of overwriting their changes.
+- **Preview** shows the rubric exactly as judges see it. You can click the stars to try the scoring;
+  nothing is saved.
+- **Publish…** lists the weights and asks you to confirm. Everything that still needs fixing is listed
+  at the top of the page, and the Publish button stays disabled until it's done.
+- **Changing a published rubric**: press **Edit rubric**. That creates a draft copy, and judges keep
+  using the published version until you publish the draft. Published versions never change.
+  Evaluations keep the version (and weights) they were started on, and their scores never change. If
+  evaluations already exist, publishing asks you to confirm and lists the weight changes. **Discard
+  draft** drops the copy.
+- **Judges and administrators** see the published rubric under **Rubric** (judges) or **My teams →
+  judging rubric**. It is read-only. Administrators can be assigned to teams on the Teams page and then
+  judge exactly like judges. Everything is recorded in the audit log.
+
+### Judging (judges and assigned administrators)
+
+Open **My teams**. Each team shows **Not started**, **Draft** or **Submitted**, how many criteria are
+rated (for example 5/8), and the final score once submitted.
+
+- **Start / Continue / View** opens the team. The team's details are read-only. Press **Start
+  evaluation** to begin.
+- **Rate** each criterion with 1 to 5 stars. Each section's score, (rating 1 + rating 2) ÷ 10 × section
+  weight, and the running total update immediately. Scores are shown with two decimals.
+- **Notes** are optional, on each criterion, each section and the whole evaluation.
+- **Saving** happens automatically about a second after each change. The bar at the bottom shows
+  "✓ All changes saved", "Saving…" or "Not saved yet". **Save** saves immediately. If a save fails
+  (for example the server stopped), your ratings stay on the page and on this computer, and saving
+  retries. If you open the same evaluation in two tabs, the older tab is stopped before it can
+  overwrite anything, and you choose which version to keep.
+- **Submit…** checks that all 8 criteria are rated and highlights any that are missing. It then shows
+  the section scores and the final score for confirmation. After submitting, the evaluation is locked
+  and shown read-only with its score and time. Clicking twice never submits twice.
+- If the rubric was republished after you started, the evaluation stays on the version (and weights)
+  it started with, and a notice says so.
+- Administrators judge only teams they are assigned to, with exactly the same rules. On **Teams**, a
+  team's page shows each judge's status, rated count, score and rubric version. Teams whose
+  evaluations use different rubric versions are flagged.
+
 ## 4. Run it (production mode, one port)
 
 ```powershell
@@ -256,14 +334,14 @@ results. Copy the `backups` folder to a USB drive at the end of each day. The to
 
 ## 7. Tests and checks
 
-| Command             | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `npm run check`     | Type checking, lint, formatting check and all unit tests. Run before every commit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `npm test`          | Unit tests: 19 server tests and 40 UI tests (sign-in, route guards, password change, Users and Teams pages, team import, spreadsheet reading, judge team list, status). No database needed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `npm run test:db`   | 150 tests against the real XAMPP MySQL. 65 cover the database (migrations, constraints, triggers, rubric versioning, evaluation history, admin seed, least-privilege account, backup and restore). 29 cover sign-in (login, lockout, rate limit, password change, session expiry, logout, disabled accounts, role checks, cross-site requests, recovery). 28 cover user management (create, edit, disable, reactivate, role changes, password reset, last-admin protection including two admins acting at once, judge access refused, validation, audit log). 28 cover teams (create, edit, duplicate Team IDs, archive, search, sort, pagination, assignments and bulk assignment, disabled accounts and archived teams refused, unassigning keeps evaluations, judge visibility, import preview, confirmation, row errors and full rollback, audit log). They use a separate scratch database (`<DB_NAME>_test`) that is created and deleted automatically, so your data is never touched. The `server\\.env` account must be allowed to create databases (XAMPP `root` is). |
-| `npm run typecheck` | TypeScript checks for all workspaces.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `npm run lint`      | ESLint.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `npm run format`    | Reformat all files with Prettier.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Command             | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm run check`     | Type checking, lint, formatting check and all unit tests. Run before every commit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `npm test`          | Unit tests: 29 server tests (including the scoring formula and rubric rules) and 58 UI tests (sign-in, route guards, password change, Users, Teams and Rubric pages, team import, spreadsheet reading, My Teams and the scoring page with autosave, conflicts and submission, status). No database needed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `npm run test:db`   | 191 tests against the real XAMPP MySQL. 67 cover the database (migrations, constraints, triggers, rubric versioning, evaluation history, admin seed, least-privilege account, backup and restore). 29 cover sign-in (login, lockout, rate limit, password change, session expiry, logout, disabled accounts, role checks, cross-site requests, recovery). 28 cover user management (create, edit, disable, reactivate, role changes, password reset, last-admin protection including two admins acting at once, judge access refused, validation, audit log). 28 cover teams (create, edit, duplicate Team IDs, archive, search, sort, pagination, assignments and bulk assignment, disabled accounts and archived teams refused, unassigning keeps evaluations, judge visibility, import preview, confirmation, row errors and full rollback, audit log). 22 cover Rubric Management (drafts, the fixed 4 × 2 shape, weights totalling 100%, validation messages, publishing, editing after publishing, version history, evaluations protected, judge read-only access, administrators as judges, audit log, simultaneous publishes and saves). 17 cover judging (starting, drafts, server-side scoring, rating validation, stale-tab conflicts, rollback of a failed save, required ratings, submission and locking, duplicate submissions, admins as judges, archived teams, disabled accounts, unassignment, rubric versions). They use a separate scratch database (`<DB_NAME>_test`) that is created and deleted automatically, so your data is never touched. The `server\\.env` account must be allowed to create databases (XAMPP `root` is). |
+| `npm run typecheck` | TypeScript checks for all workspaces.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `npm run lint`      | ESLint.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `npm run format`    | Reformat all files with Prettier.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## 8. Troubleshooting
 
@@ -294,7 +372,9 @@ judging-platform-local/
     src/db/pool.ts      MySQL connection pool and health check
     src/routes/health.ts GET /api/health
     src/app.ts          security headers, JSON limits, routes, error handling
-    migrations/         numbered SQL files 001–006 (core, rubric, evaluations, auth, users, teams)
+    migrations/         numbered SQL files 001–008 (core, rubric, evaluations, auth, users, teams, rubric management, evaluation access)
+    src/evaluations/    judge evaluations: start, save, submit (service, routes)
+    src/rubric/         rubric drafts, saving, publishing (service, routes)
     src/teams/          teams, assignments and import (validation, service, routes)
     src/db/             migration runner, admin seed, backup/restore, app account
     scripts/            db:* commands
@@ -302,7 +382,7 @@ judging-platform-local/
   client/               React 19 + Vite 7 + Tailwind CSS 4
     public/brand/       iSchool and Al Ahly Club logos (served locally)
     public/templates/   team import templates (.xlsx and .csv)
-    src/                layout, pages (auth, users, teams, judge), API client, spreadsheet reader
+    src/                layout, pages (auth, users, teams, rubric, judge), star rating, API client, spreadsheet reader
     test/               UI tests
 ```
 

@@ -377,6 +377,11 @@ export function TeamsPage() {
                     <td className="px-3 py-3 text-center font-semibold">{t.assignedJudges}</td>
                     <td className="px-3 py-3">
                       <ProgressBar submitted={t.submittedEvaluations} total={t.assignedJudges} />
+                      {t.mixedVersions && (
+                        <span className="mt-1 inline-block">
+                          <Badge tone="gold">Mixed rubric versions</Badge>
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <RowActions team={t} />
@@ -412,6 +417,11 @@ export function TeamsPage() {
                     </Badge>
                   </div>
                   <ProgressBar submitted={t.submittedEvaluations} total={t.assignedJudges} />
+                  {t.mixedVersions && (
+                    <span className="mt-1 inline-block">
+                      <Badge tone="gold">Mixed rubric versions</Badge>
+                    </span>
+                  )}
                   {t.assignedJudges > 0 && (
                     <p className="text-xs text-black/55">
                       {t.assignedJudges} judge{t.assignedJudges === 1 ? '' : 's'} assigned

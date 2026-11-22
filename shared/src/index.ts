@@ -47,3 +47,4 @@ export * from './rubric.js';
 export * from './auth.js';
 export * from './users.js';
 export * from './teams.js';
+export * from './evaluations.js';

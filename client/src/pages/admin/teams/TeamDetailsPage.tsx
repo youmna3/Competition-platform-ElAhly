@@ -10,6 +10,7 @@ import {
   type TeamAssignment,
   type TeamDetails,
   type TeamInput,
+  formatScore,
 } from '@judging/shared';
 import { api } from '../../../api/client';
 import { FullPageSpinner } from '../../../components/FullPageSpinner';
@@ -170,6 +171,14 @@ export function TeamDetailsPage() {
         </dl>
       </Card>
 
+      {team.mixedVersions && (
+        <Alert tone="warning" title="Evaluations use different rubric versions">
+          Some judges evaluated this team on an older rubric version, with different weights. Their
+          scores are kept as submitted and must not be combined as if they were the same. Review
+          them before results are finalised.
+        </Alert>
+      )}
+
       <section className="space-y-3" aria-labelledby="assigned-judges">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="assigned-judges" className="text-lg font-semibold">
@@ -215,8 +224,20 @@ export function TeamDetailsPage() {
                     <Badge tone={PROGRESS_TONES[a.evaluationStatus]}>
                       {EVALUATION_PROGRESS_LABELS[a.evaluationStatus]}
                     </Badge>
+                    {a.outdatedVersion && (
+                      <span className="ml-1">
+                        <Badge tone="gold">Older rubric v{a.rubricVersionNo}</Badge>
+                      </span>
+                    )}
+                    <p className="mt-1 text-xs text-black/60 tabular-nums">
+                      {a.evaluationStatus === 'submitted' && a.totalScore != null
+                        ? `Score ${formatScore(a.totalScore)} / 100`
+                        : a.evaluationStatus === 'draft'
+                          ? `${a.ratedCount}/8 rated`
+                          : ''}
+                    </p>
                     {a.submittedAt && (
-                      <p className="mt-1 text-xs text-black/50">{formatDate(a.submittedAt)}</p>
+                      <p className="text-xs text-black/50">{formatDate(a.submittedAt)}</p>
                     )}
                   </div>
                   <Button
@@ -253,9 +274,15 @@ export function TeamDetailsPage() {
                     <p className="font-medium">{p.fullName}</p>
                     <p className="text-sm text-black/60">{p.email}</p>
                   </div>
-                  <Badge tone={PROGRESS_TONES[p.evaluationStatus]}>
-                    {EVALUATION_PROGRESS_LABELS[p.evaluationStatus]}
-                  </Badge>
+                  <div className="text-right">
+                    <Badge tone={PROGRESS_TONES[p.evaluationStatus]}>
+                      {EVALUATION_PROGRESS_LABELS[p.evaluationStatus]}
+                    </Badge>
+                    <p className="mt-1 text-xs text-black/60">
+                      Rubric v{p.rubricVersionNo}
+                      {p.totalScore != null && ` · score ${formatScore(p.totalScore)} / 100`}
+                    </p>
+                  </div>
                 </li>
               ))}
             </ul>

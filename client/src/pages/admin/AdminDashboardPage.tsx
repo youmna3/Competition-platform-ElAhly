@@ -65,9 +65,18 @@ export function AdminDashboardPage() {
                   : ''}
               </p>
               <p className="text-sm text-black/60">
-                {overview.data.rubricState === 'not_configured'
-                  ? 'Judging cannot start until the rubric is built and published (Rubric Management, Phase 5).'
-                  : 'Judges score against the published rubric.'}
+                {overview.data.rubricState === 'not_configured' ||
+                overview.data.rubricState === 'draft_only'
+                  ? 'Judging cannot start until the rubric is built and published. '
+                  : overview.data.rubricState === 'published_with_draft'
+                    ? 'Judges use the published version; a draft with changes is waiting. '
+                    : 'Judges score against the published rubric. '}
+                <Link
+                  to="/admin/rubric"
+                  className="font-semibold text-ischool-blue hover:underline"
+                >
+                  Open Rubric Management
+                </Link>
               </p>
             </div>
             <span

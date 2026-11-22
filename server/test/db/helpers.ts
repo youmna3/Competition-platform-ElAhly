@@ -147,7 +147,46 @@ export async function addCriterion(
   return r.insertId;
 }
 
-/** The publish transaction the Rubric Management service will run (Phase 5). */
+/**
+ * A draft in the competition's fixed shape (4 sections × 2 criteria, 1-5 stars,
+ * criterion weight = section % / 10), ready to publish when the weights total 100.
+ */
+export async function createPublishableDraft(
+  conn: Connection,
+  {
+    versionNo,
+    title = 'Test rubric',
+    weights = [25, 25, 25, 25],
+  }: { versionNo: number; title?: string; weights?: number[] },
+): Promise<{
+  version: number;
+  sections: number[];
+  criteria: number[];
+  criterion: number;
+  section: number;
+}> {
+  const version = await createDraft(conn, { versionNo, title, totalTarget: 100 });
+  await conn.query('UPDATE rubric_versions SET scale_min = 1, scale_max = 5 WHERE id = ?', [
+    version,
+  ]);
+  const sections: number[] = [];
+  const criteria: number[] = [];
+  for (const [i, w] of weights.entries()) {
+    const [r] = await conn.query<ResultSetHeader>(
+      'INSERT INTO rubric_sections (rubric_version_id, position, title, weight_percent) VALUES (?, ?, ?, ?)',
+      [version, i + 1, `Section ${i + 1}`, w],
+    );
+    sections.push(r.insertId);
+    for (const position of [1, 2]) {
+      criteria.push(
+        await addCriterion(conn, version, r.insertId, { position, min: 1, max: 5, weight: w / 10 }),
+      );
+    }
+  }
+  return { version, sections, criteria, criterion: criteria[0]!, section: sections[0]! };
+}
+
+/** The publish transaction the Rubric Management service runs. */
 export async function publish(conn: Connection, versionId: number) {
   await conn.beginTransaction();
   try {

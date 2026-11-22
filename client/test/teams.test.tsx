@@ -44,6 +44,7 @@ const team = (id: number, teamCode: string, extra: Partial<TeamSummary> = {}): T
   assignedJudges: 0,
   submittedEvaluations: 0,
   draftEvaluations: 0,
+  mixedVersions: false,
   ...extra,
 });
 const teams = [
@@ -297,7 +298,7 @@ describe('Team import', () => {
 });
 
 describe('Judge "My teams"', () => {
-  it('lists assigned teams with their status and says scoring opens in Phase 6', async () => {
+  it('lists assigned teams and says judging waits for the rubric to be published', async () => {
     const assignments: JudgeAssignment[] = [
       {
         teamId: 1,
@@ -306,14 +307,25 @@ describe('Judge "My teams"', () => {
         projectName: 'Irrigation',
         evaluationStatus: 'not_started',
         assignedAt: '2026-11-22T10:00:00.000Z',
+        ratedCount: 0,
+        requiredCount: 8,
+        totalScore: null,
+        submittedAt: null,
+        rubricVersionNo: null,
+        outdatedVersion: false,
       },
     ];
     mockApi(judgeUser, (c) =>
-      c.url === '/api/judge/assignments' ? { status: 200, body: { assignments } } : undefined,
+      c.url === '/api/judge/assignments'
+        ? { status: 200, body: { assignments } }
+        : c.url === '/api/judge/rubric'
+          ? { status: 200, body: { rubric: null } }
+          : undefined,
     );
     renderAt('/judge');
     expect((await screen.findAllByText('Falcons')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Not started').length).toBeGreaterThan(0);
-    expect(screen.getByText(/available in Phase 6/)).toBeInTheDocument();
+    expect(await screen.findByText('Judging hasn’t started yet')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Start evaluation/ })).not.toBeInTheDocument();
   });
 });

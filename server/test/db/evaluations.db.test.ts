@@ -1,10 +1,9 @@
 import type { Connection, RowDataPacket } from 'mysql2/promise';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
-  addCriterion,
-  addSection,
   connectTest,
   createDraft,
+  createPublishableDraft,
   createTeam,
   createUser,
   dropDatabase,
@@ -35,9 +34,7 @@ afterAll(async () => {
 });
 
 async function publishedVersion(versionNo: number) {
-  const version = await createDraft(c(), { versionNo });
-  const section = await addSection(c(), version, { position: 1 });
-  const criterion = await addCriterion(c(), version, section, { position: 1, min: 1, max: 5 });
+  const { version, section, criterion } = await createPublishableDraft(c(), { versionNo });
   await publish(c(), version);
   return { version, section, criterion };
 }
@@ -194,9 +191,11 @@ describe('history is preserved when the rubric changes', () => {
     const before = await snapshot();
 
     // The admin edits the rubric (new draft with different scoring) and publishes it.
-    const v2 = await createDraft(c(), { versionNo: 2, title: 'Revised rubric' });
-    const s2 = await addSection(c(), v2, { position: 1 });
-    await addCriterion(c(), v2, s2, { position: 1, min: 0, max: 100, weight: 3 });
+    const { version: v2 } = await createPublishableDraft(c(), {
+      versionNo: 2,
+      title: 'Revised rubric',
+      weights: [40, 30, 20, 10],
+    });
     await publish(c(), v2);
 
     expect(await snapshot()).toEqual(before);

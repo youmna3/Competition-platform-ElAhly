@@ -86,6 +86,9 @@ export function AppLayout() {
                 <NavLink to="/admin/teams" className={navClass}>
                   Teams
                 </NavLink>
+                <NavLink to="/admin/rubric" className={navClass}>
+                  Rubric
+                </NavLink>
                 <NavLink to="/judge" className={navClass}>
                   My teams
                 </NavLink>
@@ -95,9 +98,14 @@ export function AppLayout() {
               </>
             )}
             {user.role === 'judge' && (
-              <NavLink to="/judge" className={navClass}>
-                My teams
-              </NavLink>
+              <>
+                <NavLink to="/judge" className={navClass}>
+                  My teams
+                </NavLink>
+                <NavLink to="/rubric" className={navClass}>
+                  Rubric
+                </NavLink>
+              </>
             )}
             <NavLink to="/change-password" className={navClass}>
               Change password

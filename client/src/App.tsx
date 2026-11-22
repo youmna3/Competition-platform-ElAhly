@@ -10,6 +10,9 @@ import { UsersPage } from './pages/admin/users/UsersPage';
 import { TeamsPage } from './pages/admin/teams/TeamsPage';
 import { TeamImportPage } from './pages/admin/teams/TeamImportPage';
 import { TeamDetailsPage } from './pages/admin/teams/TeamDetailsPage';
+import { RubricManagementPage } from './pages/admin/rubric/RubricManagementPage';
+import { ViewRubricPage } from './pages/rubric/ViewRubricPage';
+import { EvaluationPage } from './pages/judge/EvaluationPage';
 
 export default function App() {
   return (
@@ -64,10 +67,34 @@ export default function App() {
           }
         />
         <Route
+          path="/admin/rubric"
+          element={
+            <RequireAuth roles={['admin']}>
+              <RubricManagementPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/rubric"
+          element={
+            <RequireAuth roles={['judge', 'admin']}>
+              <ViewRubricPage />
+            </RequireAuth>
+          }
+        />
+        <Route
           path="/admin/status"
           element={
             <RequireAuth roles={['admin']}>
               <StatusPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/judge/teams/:teamId"
+          element={
+            <RequireAuth roles={['judge', 'admin']}>
+              <EvaluationPage />
             </RequireAuth>
           }
         />

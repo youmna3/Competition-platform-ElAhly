@@ -59,7 +59,9 @@ const PROGRESS_COUNTS = `
   (SELECT COUNT(*) FROM team_judges tj JOIN evaluations e ON e.team_id = tj.team_id AND e.judge_id = tj.judge_id
      WHERE tj.team_id = t.id AND e.status = 'submitted') AS submitted_evaluations,
   (SELECT COUNT(*) FROM team_judges tj JOIN evaluations e ON e.team_id = tj.team_id AND e.judge_id = tj.judge_id
-     WHERE tj.team_id = t.id AND e.status = 'draft') AS draft_evaluations`;
+     WHERE tj.team_id = t.id AND e.status = 'draft') AS draft_evaluations,
+  (SELECT COUNT(DISTINCT e.rubric_version_id) FROM team_judges tj JOIN evaluations e ON e.team_id = tj.team_id AND e.judge_id = tj.judge_id
+     WHERE tj.team_id = t.id) > 1 AS mixed_versions`;
 
 function toSummary(r: RowDataPacket): TeamSummary {
   return {
@@ -73,6 +75,7 @@ function toSummary(r: RowDataPacket): TeamSummary {
     assignedJudges: Number(r.assigned_judges ?? 0),
     submittedEvaluations: Number(r.submitted_evaluations ?? 0),
     draftEvaluations: Number(r.draft_evaluations ?? 0),
+    mixedVersions: Boolean(Number(r.mixed_versions ?? 0)),
   };
 }
 
@@ -142,18 +145,22 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
 
   const [assignments] = await db.query<RowDataPacket[]>(
     `SELECT u.id, u.full_name, u.email, u.role, u.status, tj.assigned_at, ab.email AS assigned_by_email,
-            e.status AS evaluation_status, e.submitted_at
+            e.status AS evaluation_status, e.submitted_at, e.required_scored, e.total_score,
+            v.version_no, (e.rubric_version_id <> r.published_version_id) AS outdated
      FROM team_judges tj
      JOIN users u ON u.id = tj.judge_id
+     JOIN rubric r ON r.id = 1
      LEFT JOIN users ab ON ab.id = tj.assigned_by
      LEFT JOIN evaluations e ON e.team_id = tj.team_id AND e.judge_id = tj.judge_id
+     LEFT JOIN rubric_versions v ON v.id = e.rubric_version_id
      WHERE tj.team_id = ?
      ORDER BY u.full_name, u.id`,
     [id],
   );
   const [past] = await db.query<RowDataPacket[]>(
-    `SELECT u.id, u.full_name, u.email, e.status, e.submitted_at
+    `SELECT u.id, u.full_name, u.email, e.status, e.submitted_at, e.total_score, v.version_no
      FROM evaluations e JOIN users u ON u.id = e.judge_id
+     JOIN rubric_versions v ON v.id = e.rubric_version_id
      WHERE e.team_id = ?
        AND NOT EXISTS (SELECT 1 FROM team_judges tj WHERE tj.team_id = e.team_id AND tj.judge_id = e.judge_id)
      ORDER BY u.full_name`,
@@ -174,6 +181,10 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
       assignedByEmail: a.assigned_by_email ? String(a.assigned_by_email) : null,
       evaluationStatus: (a.evaluation_status ?? 'not_started') as EvaluationProgress,
       submittedAt: iso(a.submitted_at),
+      ratedCount: Number(a.required_scored ?? 0),
+      totalScore: a.evaluation_status === 'submitted' ? Number(a.total_score) : null,
+      rubricVersionNo: a.version_no == null ? null : Number(a.version_no),
+      outdatedVersion: Boolean(Number(a.outdated ?? 0)),
     })),
     pastEvaluations: past.map((p) => ({
       judgeId: Number(p.id),
@@ -181,6 +192,8 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
       email: String(p.email),
       evaluationStatus: p.status,
       submittedAt: iso(p.submitted_at),
+      totalScore: p.status === 'submitted' ? Number(p.total_score) : null,
+      rubricVersionNo: Number(p.version_no),
     })),
   };
 }

@@ -38,6 +38,8 @@ export interface TeamSummary {
   /** Submitted / in-progress evaluations by currently assigned judges. */
   submittedEvaluations: number;
   draftEvaluations: number;
+  /** Evaluations of this team use more than one rubric version: needs administrator review. */
+  mixedVersions: boolean;
 }
 
 export type TeamSortField =
@@ -60,6 +62,12 @@ export interface TeamAssignment {
   assignedByEmail: string | null;
   evaluationStatus: EvaluationProgress;
   submittedAt: string | null;
+  ratedCount: number;
+  /** Final score once submitted. */
+  totalScore: number | null;
+  rubricVersionNo: number | null;
+  /** The evaluation uses an older rubric version than the published one. */
+  outdatedVersion: boolean;
 }
 
 /** An evaluation kept from a judge who is no longer assigned (history is never deleted). */
@@ -69,6 +77,8 @@ export interface PastEvaluation {
   email: string;
   evaluationStatus: Exclude<EvaluationProgress, 'not_started'>;
   submittedAt: string | null;
+  totalScore: number | null;
+  rubricVersionNo: number;
 }
 
 export interface TeamDetails extends TeamSummary {

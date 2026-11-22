@@ -19,7 +19,7 @@ export function Modal({
   canClose?: boolean;
   children?: ReactNode;
   footer?: ReactNode;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -69,7 +69,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
-        className={`max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl ${size === 'sm' ? 'sm:max-w-md' : 'sm:max-w-lg'}`}
+        className={`max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl ${size === 'sm' ? 'sm:max-w-md' : size === 'lg' ? 'sm:max-w-3xl' : 'sm:max-w-lg'}`}
       >
         <div className="brand-stripe h-1 rounded-t-3xl" aria-hidden />
         <div className="space-y-4 p-6">

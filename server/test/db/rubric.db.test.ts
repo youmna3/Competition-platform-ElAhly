@@ -5,6 +5,7 @@ import {
   addSection,
   connectTest,
   createDraft,
+  createPublishableDraft,
   dropDatabase,
   expectRefused,
   freshTestDatabase,
@@ -29,13 +30,9 @@ afterAll(async () => {
 
 const c = () => conn as Connection;
 
-/** A minimal valid draft: one scored section with one criterion. */
-async function validDraft(versionNo = 1) {
-  const version = await createDraft(c(), { versionNo });
-  const section = await addSection(c(), version, { position: 1 });
-  const criterion = await addCriterion(c(), version, section, { position: 1, min: 0, max: 10 });
-  return { version, section, criterion };
-}
+/** A valid draft in the fixed shape: 4 sections × 2 criteria, weights 25 each. */
+const validDraft = (versionNo = 1, weights?: number[]) =>
+  createPublishableDraft(c(), { versionNo, weights });
 
 describe('exactly one rubric', () => {
   it('refuses a second rubric row and refuses deleting the rubric', async () => {
@@ -167,56 +164,74 @@ describe('editing a draft', () => {
   });
 
   it('refuses a criterion whose section belongs to a different version', async () => {
-    const { section } = await validDraft(1);
-    await c().query('UPDATE rubric SET draft_version_id = NULL');
+    // Only one draft can exist at a time, so the other version is a published one.
+    const { version, section } = await validDraft(1);
+    await publish(c(), version);
     const other = await createDraft(c(), { versionNo: 2 });
     await expectRefused(addCriterion(c(), other, section, { position: 5 }), /ER_NO_REFERENCED_ROW/);
   });
 });
 
 describe('publishing', () => {
-  it('refuses to publish an incomplete rubric', async () => {
-    // No title.
-    const untitled = await createDraft(c(), { versionNo: 1, title: '' });
-    const s = await addSection(c(), untitled, { position: 1 });
-    await addCriterion(c(), untitled, s, { position: 1 });
-    await expectRefused(publish(c(), untitled), /needs a title/);
-    await c().query("UPDATE rubric_versions SET title = 'Titled' WHERE id = ?", [untitled]);
-
-    // A section with no criteria.
-    const empty = await addSection(c(), untitled, { position: 2 });
-    await expectRefused(publish(c(), untitled), /every section needs at least one criterion/);
-    await c().query('DELETE FROM rubric_sections WHERE id = ?', [empty]);
-
-    // Nothing is left half-published after a refusal.
+  it('refuses to publish without a title, leaving nothing half-published', async () => {
+    const { version } = await validDraft(1);
+    await c().query("UPDATE rubric_versions SET title = '' WHERE id = ?", [version]);
+    await expectRefused(publish(c(), version), /needs a title/);
     expect(await rubricState(c())).toBe('draft_only');
-    expect(await scalar(c(), 'SELECT status FROM rubric_versions WHERE id = ?', [untitled])).toBe(
+    expect(await scalar(c(), 'SELECT status FROM rubric_versions WHERE id = ?', [version])).toBe(
       'draft',
     );
   });
 
-  it('refuses a rubric with no sections or with only bonus sections', async () => {
-    const version = await createDraft(c(), { versionNo: 1 });
-    await expectRefused(publish(c(), version), /at least one scored/);
-    const bonus = await addSection(c(), version, { position: 1, isBonus: true });
-    await addCriterion(c(), version, bonus, { position: 1 });
-    await expectRefused(publish(c(), version), /at least one scored/);
+  it('refuses anything but exactly 4 sections of exactly 2 criteria', async () => {
+    const three = await validDraft(1, [40, 30, 30]);
+    await expectRefused(publish(c(), three.version), /exactly 4 sections/);
+    await c().query('DELETE FROM rubric_versions WHERE id = ?', [three.version]);
+    await c().query('UPDATE rubric SET draft_version_id = NULL');
+
+    const { version, criteria, sections } = await validDraft(2);
+    await c().query('DELETE FROM rubric_criteria WHERE id = ?', [criteria[1]]);
+    await expectRefused(publish(c(), version), /exactly 2 criteria/);
+    await addCriterion(c(), version, sections[0]!, { position: 2, min: 1, max: 5, weight: 2.5 });
+    await addCriterion(c(), version, sections[0]!, { position: 3, min: 1, max: 5, weight: 2.5 });
+    await expectRefused(publish(c(), version), /exactly 2 criteria/);
   });
 
-  it('checks the configured total when one is set', async () => {
-    const version = await createDraft(c(), { versionNo: 1, totalTarget: 100 });
-    const s = await addSection(c(), version, { position: 1 });
-    await addCriterion(c(), version, s, { position: 1, max: 10, weight: 4 }); // 40 points
-    await expectRefused(publish(c(), version), /do not add up/);
-    await addCriterion(c(), version, s, { position: 2, max: 20, weight: 3 }); // + 60 = 100
-    const bonus = await addSection(c(), version, { position: 2, isBonus: true });
-    await addCriterion(c(), version, bonus, { position: 1, max: 5 }); // bonus is not part of the total
-    await publish(c(), version);
-    expect(await rubricState(c())).toBe('published');
+  it('refuses missing weights and weights that do not total exactly 100%', async () => {
+    const { version, sections } = await validDraft(1, [30, 30, 30, 10]);
+    await c().query('UPDATE rubric_sections SET weight_percent = NULL WHERE id = ?', [sections[3]]);
+    await expectRefused(publish(c(), version), /needs a weight/);
+    await c().query('UPDATE rubric_sections SET weight_percent = 20 WHERE id = ?', [sections[3]]);
+    await c().query('UPDATE rubric_criteria SET weight = 2 WHERE section_id = ?', [sections[3]]);
+    await expectRefused(publish(c(), version), /total exactly 100%/);
+    await expectRefused(
+      c().query('UPDATE rubric_sections SET weight_percent = 0 WHERE id = ?', [sections[3]]),
+      /chk_rs_weight_percent|CONSTRAINT/i,
+    );
   });
 
-  it('publishes a valid draft and clears the draft pointer', async () => {
-    const { version } = await validDraft(1);
+  it('refuses criteria that are not required 1-5 star ratings weighted by their section', async () => {
+    const { version, criteria } = await validDraft(1);
+    await c().query('UPDATE rubric_criteria SET max_score = 10 WHERE id = ?', [criteria[0]]);
+    await expectRefused(publish(c(), version), /1-5 star/);
+    await c().query('UPDATE rubric_criteria SET max_score = 5, weight = 3 WHERE id = ?', [
+      criteria[0],
+    ]);
+    await expectRefused(publish(c(), version), /1-5 star/);
+    await c().query('UPDATE rubric_criteria SET weight = 2.5, is_required = FALSE WHERE id = ?', [
+      criteria[0],
+    ]);
+    await expectRefused(publish(c(), version), /1-5 star/);
+  });
+
+  it('refuses bonus sections', async () => {
+    const { version, sections } = await validDraft(1);
+    await c().query('UPDATE rubric_sections SET is_bonus = TRUE WHERE id = ?', [sections[0]]);
+    await expectRefused(publish(c(), version), /exactly 2 criteria/);
+  });
+
+  it('publishes a valid draft with uneven weights and clears the draft pointer', async () => {
+    const { version } = await validDraft(1, [35, 25, 25, 15]);
     await publish(c(), version);
     const [rows] = await c().query<RowDataPacket[]>('SELECT * FROM v_rubric_status');
     expect(rows[0]).toMatchObject({
@@ -225,6 +240,16 @@ describe('publishing', () => {
       draft_version_id: null,
       published_version_no: 1,
     });
+    // The Phase 1 scoring model gives a maximum of exactly 100.
+    expect(
+      Number(
+        await scalar(
+          c(),
+          'SELECT SUM(max_score * weight) FROM rubric_criteria WHERE rubric_version_id = ?',
+          [version],
+        ),
+      ),
+    ).toBe(100);
   });
 });
 
@@ -316,7 +341,7 @@ describe('internal versioning', () => {
         'SELECT COUNT(*) FROM rubric_criteria WHERE rubric_version_id = ?',
         [v1.version],
       ),
-    ).toBe(1);
+    ).toBe(8);
   });
 
   it('allows discarding an unpublished draft, which removes its content', async () => {

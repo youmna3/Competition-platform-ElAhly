@@ -7,10 +7,8 @@ import mysql, { type Connection, type Pool } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
-  addCriterion,
-  addSection,
   connectTest,
-  createDraft,
+  createPublishableDraft,
   dropDatabase,
   expectRefused,
   freshTestDatabase,
@@ -56,9 +54,7 @@ async function newTeam(
 }
 
 async function publishedRubric() {
-  const version = await createDraft(conn, { versionNo: 1 });
-  const section = await addSection(conn, version, { position: 1 });
-  await addCriterion(conn, version, section, { position: 1 });
+  const { version } = await createPublishableDraft(conn, { versionNo: 1 });
   await publish(conn, version);
   return version;
 }

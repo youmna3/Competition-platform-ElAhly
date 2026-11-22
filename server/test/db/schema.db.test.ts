@@ -1,10 +1,8 @@
 import type { Connection } from 'mysql2/promise';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  addCriterion,
-  addSection,
   connectTest,
-  createDraft,
+  createPublishableDraft,
   createTeam,
   createUser,
   dropDatabase,
@@ -98,9 +96,7 @@ describe('teams', () => {
   });
 
   it('refuses to delete a team or judge that has evaluation history', async () => {
-    const version = await createDraft(conn, { versionNo: 1 });
-    const section = await addSection(conn, version, { position: 1 });
-    await addCriterion(conn, version, section, { position: 1 });
+    const { version } = await createPublishableDraft(conn, { versionNo: 1 });
     await publish(conn, version);
 
     const team = await createTeam(conn, 'AHL-HIST');

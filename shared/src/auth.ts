@@ -65,4 +65,13 @@ export interface JudgeAssignment {
   projectName: string;
   assignedAt: string;
   evaluationStatus: 'not_started' | 'draft' | 'submitted';
+  /** Criteria rated so far (of requiredCount, 8). */
+  ratedCount: number;
+  requiredCount: number;
+  /** Final score once submitted. */
+  totalScore: number | null;
+  submittedAt: string | null;
+  /** Rubric version the evaluation uses, and whether it is older than the published one. */
+  rubricVersionNo: number | null;
+  outdatedVersion: boolean;
 }

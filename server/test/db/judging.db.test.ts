@@ -1,10 +1,11 @@
+import { testMysql as mysql } from './helpers.js';
 /**
  * Phase 6: judge evaluations through the real API and a real (scratch) MySQL
  * database. Starting, autosaved drafts, scoring, submission and locking,
  * concurrency, access rules, admins as judges, rubric versions and audit.
  */
 import bcrypt from 'bcryptjs';
-import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
+import { type Pool, type RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type {

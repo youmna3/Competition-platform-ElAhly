@@ -222,7 +222,7 @@ export function UsersPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-ahly-red">Administrator</p>
+          <p className="eyebrow">Administrator</p>
           <h1 className="text-2xl font-bold sm:text-3xl">Users</h1>
           <p className="mt-1 text-sm text-black/60">
             Administrators and judges who can sign in. There is no public sign-up.
@@ -293,7 +293,7 @@ export function UsersPage() {
           {/* Desktop table */}
           <Card className="hidden !p-0 md:block">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-black/5 text-xs uppercase tracking-wide text-black/50">
+              <thead className="border-b border-black/5 text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th scope="col" className="px-5 py-3 font-semibold">
                     Name
@@ -319,13 +319,13 @@ export function UsersPage() {
                 {data.users.map((u) => (
                   <tr
                     key={u.id}
-                    className={u.status === 'disabled' ? 'bg-black/[0.02] text-black/55' : ''}
+                    className={u.status === 'disabled' ? 'bg-black/[0.02] text-muted' : ''}
                   >
                     <td className="px-5 py-3">
                       <p className="font-semibold text-ink">
                         {u.fullName}{' '}
                         {u.id === me?.id && (
-                          <span className="text-xs font-normal text-black/50">(you)</span>
+                          <span className="text-xs font-normal text-muted">(you)</span>
                         )}
                       </p>
                       <p className="text-black/60 break-all">{u.email}</p>
@@ -363,7 +363,7 @@ export function UsersPage() {
                       <p className="font-semibold">
                         {u.fullName}{' '}
                         {u.id === me?.id && (
-                          <span className="text-xs font-normal text-black/50">(you)</span>
+                          <span className="text-xs font-normal text-muted">(you)</span>
                         )}
                       </p>
                       <p className="text-sm text-black/60 break-all">{u.email}</p>
@@ -371,7 +371,7 @@ export function UsersPage() {
                     <Badge tone={u.role === 'admin' ? 'red' : 'blue'}>{ROLE_LABELS[u.role]}</Badge>
                   </div>
                   <StatusBadges user={u} />
-                  <p className="text-xs text-black/55">
+                  <p className="text-xs text-muted">
                     {(u.role === 'judge' || u.assignedTeams > 0) && (
                       <>Assigned teams: {u.assignedTeams} · </>
                     )}

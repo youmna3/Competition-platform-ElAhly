@@ -13,6 +13,8 @@ import {
   type DashboardResponse,
   type EvaluationProgress,
   type JudgeResult,
+  type JudgeLeaderboardResponse,
+  type LeaderboardSort,
   type ProvisionalGroup,
   type RankedTeam,
   type ResultsResponse,
@@ -424,6 +426,63 @@ export async function getResults(pool: Pool, q: ResultsQuery): Promise<ResultsRe
       notStarted: count('not_started'),
       unassigned: count('unassigned'),
     },
+  };
+}
+
+/** Reuses eligibility and exact ranking, then projects only judge-visible fields.
+ * Search happens AFTER projection: private judge names cannot influence matches.
+ * Provisional groups never expose scores or ranks through this endpoint.
+ */
+export async function getJudgeLeaderboard(
+  pool: Pool,
+  q: { search?: string; sort: LeaderboardSort; dir: 'asc' | 'desc' },
+): Promise<JudgeLeaderboardResponse> {
+  const results = await getResults(pool, { sort: 'rank', dir: 'asc' });
+  const identity = (t: TeamResult) => ({
+    teamId: t.teamId,
+    teamCode: t.teamCode,
+    name: t.name,
+    projectName: t.projectName,
+  });
+  const search = q.search?.trim().toLowerCase();
+  const matches = (t: { teamCode: string; name: string; projectName: string }) =>
+    !search || [t.teamCode, t.name, t.projectName].some((s) => s.toLowerCase().includes(search));
+  const teams = results.official.teams
+    .map((t) => ({
+      ...identity(t),
+      rank: t.rank,
+      score: t.score,
+      rubricVersionNo: t.rubricVersionNo,
+    }))
+    .filter(matches);
+  const sign = q.dir === 'desc' ? -1 : 1;
+  teams.sort((a, b) => {
+    const x = a[q.sort];
+    const y = b[q.sort];
+    const comparison =
+      typeof x === 'string' && typeof y === 'string'
+        ? x.toLowerCase().localeCompare(y.toLowerCase())
+        : Number(x) - Number(y);
+    return sign * comparison || a.teamCode.localeCompare(b.teamCode) || a.teamId - b.teamId;
+  });
+  return {
+    computedAt: results.computedAt,
+    official: {
+      available: results.official.available,
+      unavailableReason: results.official.unavailableReason,
+      rubricVersionNo: results.official.rubricVersionNo,
+      teams,
+    },
+    notRanked: [
+      ...results.notRanked.map((t) => ({ ...identity(t), status: t.status })),
+      ...results.provisional.flatMap((g) =>
+        g.teams.map((t) => ({ ...identity(t), status: 'version_conflict' as const })),
+      ),
+    ]
+      .filter(matches)
+      .sort((a, b) => a.teamCode.localeCompare(b.teamCode)),
+    versionWarnings: results.versionWarnings,
+    totalTeams: results.totals.activeTeams,
   };
 }
 

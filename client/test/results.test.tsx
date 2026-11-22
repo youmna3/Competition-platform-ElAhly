@@ -7,6 +7,7 @@ import type {
   AdminOverview,
   AuthUser,
   DashboardResponse,
+  JudgeLeaderboardResponse,
   RankedTeam,
   ResultsResponse,
   TeamResult,
@@ -17,6 +18,7 @@ import { AppLayout } from '../src/components/AppLayout';
 import { ToastProvider } from '../src/components/Toast';
 import { AdminDashboardPage } from '../src/pages/admin/AdminDashboardPage';
 import { LeaderboardPage } from '../src/pages/admin/results/LeaderboardPage';
+import { CompetitionLeaderboardPage } from '../src/pages/judge/CompetitionLeaderboardPage';
 
 const adminUser: AuthUser = {
   id: 1,
@@ -145,6 +147,7 @@ function renderAt(path: string) {
                   }
                 />
                 <Route path="/judge" element={<p>Judge home</p>} />
+                <Route path="/leaderboard" element={<CompetitionLeaderboardPage />} />
               </Route>
             </Routes>
           </ToastProvider>
@@ -169,7 +172,7 @@ describe('leaderboard', () => {
     ]);
     expect(within(rows[2]!).getByText('80.33')).toBeInTheDocument();
     expect(within(rows[0]!).getByText('85.00')).toBeInTheDocument();
-    expect(screen.getByText(/Administrators only · not public/)).toBeInTheDocument();
+    expect(screen.getByText(/administrators only · not public/)).toBeInTheDocument();
   });
 
   it('lists unranked teams separately with a labelled provisional average and the reason', async () => {
@@ -254,12 +257,113 @@ describe('leaderboard', () => {
     expect(await screen.findByText('No active teams yet')).toBeInTheDocument();
   });
 
-  it('keeps judges out', async () => {
+  it('keeps judges out of detailed admin results but offers the read-only leaderboard', async () => {
     const calls = mockApi(judgeUser, () => results);
     renderAt('/admin/leaderboard');
     expect(await screen.findByText('Judge home')).toBeInTheDocument();
     expect(calls.some((c) => c.url.startsWith('/api/admin/results'))).toBe(false);
-    expect(screen.queryByRole('link', { name: 'Leaderboard' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Leaderboard' })).toHaveAttribute(
+      'href',
+      '/leaderboard',
+    );
+  });
+});
+
+describe('authenticated competition leaderboard', () => {
+  const summary: JudgeLeaderboardResponse = {
+    computedAt: results.computedAt,
+    official: {
+      ...results.official,
+      teams: results.official.teams.map(
+        ({ teamId, teamCode, name, projectName, rank, score, rubricVersionNo }) => ({
+          teamId,
+          teamCode,
+          name,
+          projectName,
+          rank,
+          score,
+          rubricVersionNo,
+        }),
+      ),
+    },
+    notRanked: [
+      {
+        teamId: 5,
+        teamCode: 'AHL-5',
+        name: 'Pending team',
+        projectName: 'Water',
+        status: 'blocked',
+      },
+    ],
+    versionWarnings: [],
+    totalTeams: 4,
+  };
+
+  it('lets judges open results directly without requesting admin details or showing admin actions', async () => {
+    const calls = mockApi(judgeUser, (url) =>
+      url.startsWith('/api/judge/leaderboard') ? summary : undefined,
+    );
+    renderAt('/leaderboard');
+    const table = await screen.findByRole('table', { name: 'Official ranking' });
+    expect(within(table).getAllByRole('row')).toHaveLength(4);
+    expect(within(table).getAllByText('Tied')).toHaveLength(2);
+    expect(within(table).getByText('80.33')).toBeInTheDocument();
+    expect(screen.queryByText('Judge One:')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Detailed results' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Team AHL-1' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Provisional average/)).not.toBeInTheDocument();
+    expect(calls.some((c) => c.url.startsWith('/api/admin/'))).toBe(false);
+    expect(screen.getByRole('link', { name: 'Leaderboard' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it('supports judge search, score sorting and refresh', async () => {
+    const calls = mockApi(judgeUser, (url) =>
+      url.startsWith('/api/judge/leaderboard') ? summary : undefined,
+    );
+    const user = userEvent.setup();
+    renderAt('/leaderboard');
+    await screen.findByRole('table', { name: 'Official ranking' });
+    await user.click(screen.getByRole('button', { name: 'Sort by Final average' }));
+    await waitFor(() => expect(calls.some((c) => c.url.includes('sort=score'))).toBe(true));
+    await user.type(screen.getByLabelText('Search'), 'solar');
+    await waitFor(() => expect(calls.some((c) => c.url.includes('search=solar'))).toBe(true));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled());
+    const before = calls.length;
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(calls.length).toBeGreaterThan(before));
+    expect(calls.some((c) => c.url.startsWith('/api/admin/'))).toBe(false);
+  });
+
+  it('shows a rubric conflict without presenting provisional teams as official', async () => {
+    mockApi(judgeUser, (url) =>
+      url.startsWith('/api/judge/leaderboard')
+        ? {
+            ...summary,
+            official: {
+              available: false,
+              teams: [],
+              rubricVersionNo: null,
+              unavailableReason: 'Teams use different rubric versions.',
+            },
+            notRanked: [{ ...summary.notRanked[0]!, status: 'version_conflict' }],
+          }
+        : undefined,
+    );
+    renderAt('/leaderboard');
+    expect(await screen.findByText('Teams use different rubric versions.')).toBeInTheDocument();
+    expect(screen.getByText('Rubric version conflict')).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'Official ranking' })).not.toBeInTheDocument();
+    expect(screen.queryByText('85.00')).not.toBeInTheDocument();
+  });
+
+  it('provides a retry action on an API error', async () => {
+    mockApi(judgeUser, () => undefined);
+    renderAt('/leaderboard');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the leaderboard');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
   });
 });
 

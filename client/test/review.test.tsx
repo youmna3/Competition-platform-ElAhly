@@ -1,3 +1,4 @@
+import { EditSubmission } from '../src/pages/admin/evaluations/EditSubmission';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -616,5 +617,234 @@ describe('Judge notice after reopening', () => {
       ).toBe(true),
     );
     expect(screen.getAllByRole('radiogroup')).toHaveLength(8);
+  });
+});
+
+describe('Admin submission editor', () => {
+  it('requires reason and before/after confirmation and saves all ratings and notes with the original version', async () => {
+    const calls = mockApi(adminUser, (c) =>
+      c.url === '/api/admin/evaluations/7/submission'
+        ? { status: 200, body: detail() }
+        : c.url === '/api/admin/evaluations/7'
+          ? { status: 200, body: detail() }
+          : c.url.endsWith('/history')
+            ? { status: 200, body: { events } }
+            : undefined,
+    );
+    renderAt('/admin/evaluations/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Edit Submission' }));
+    let dialog = screen.getByRole('dialog');
+    expect(within(dialog).getAllByRole('radiogroup')).toHaveLength(8);
+    expect(within(dialog).getByLabelText('Note on Idea A (optional)')).toHaveValue('Original idea');
+    expect(within(dialog).getByRole('button', { name: 'Review changes' })).toBeDisabled();
+    await user.click(
+      within(within(dialog).getAllByRole('radiogroup')[0]!).getByRole('radio', { name: '5 stars' }),
+    );
+    await user.clear(within(dialog).getByLabelText('Overall notes (optional)'));
+    await user.type(within(dialog).getByLabelText('Overall notes (optional)'), 'Corrected notes');
+    await user.type(
+      within(dialog).getByLabelText('Reason for editing (required)'),
+      'Scoring correction',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Review changes' }));
+    dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByRole('table', { name: 'Before and after correction' }),
+    ).toBeInTheDocument();
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm and save correction' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    const sent = calls.find((c) => c.method === 'PUT')!.body as {
+      confirmed: boolean;
+      reason: string;
+      rowVersion: number;
+      ratings: { rating: number }[];
+      overallNotes: string;
+    };
+    expect(sent).toMatchObject({
+      confirmed: true,
+      reason: 'Scoring correction',
+      rowVersion: 9,
+      overallNotes: 'Corrected notes',
+    });
+    expect(sent.ratings[0]!.rating).toBe(5);
+    expect(sent.ratings).toHaveLength(8);
+  });
+});
+
+describe('Submission correction concurrency', () => {
+  it('keeps the opening version and persisted comparison baseline across background refreshes, then explicitly reloads while preserving edits', async () => {
+    const latest = detail(
+      { sectionScores: [35, 25, 25, 15] },
+      { rowVersion: 10, totalScore: 100, overallNotes: 'Other administrator notes' },
+    );
+    let puts = 0;
+    const calls = mockApi(adminUser, (c) => {
+      if (c.method === 'PUT') {
+        puts++;
+        return puts === 1
+          ? {
+              status: 409,
+              body: { error: { code: 'EVALUATION_CONFLICT', message: 'This evaluation changed.' } },
+            }
+          : { status: 200, body: latest };
+      }
+      if (c.url === '/api/admin/evaluations/7') return { status: 200, body: latest };
+    });
+    const saved = vi.fn();
+    const close = vi.fn();
+    const user = userEvent.setup();
+    const original = detail({}, { totalScore: 71.125 });
+    const view = render(<EditSubmission detail={original} onSaved={saved} onClose={close} />);
+    await user.clear(screen.getByLabelText('Overall notes (optional)'));
+    await user.type(screen.getByLabelText('Overall notes (optional)'), 'My unsaved correction');
+    await user.type(screen.getByLabelText('Reason for editing (required)'), 'Fix scoring error');
+    // Simulates React Query replacing the parent props after window-focus refetch.
+    view.rerender(<EditSubmission detail={latest} onSaved={saved} onClose={close} />);
+    expect(screen.getByLabelText('Overall notes (optional)')).toHaveValue('My unsaved correction');
+    await user.click(screen.getByRole('button', { name: 'Review changes' }));
+    const comparison = screen.getByRole('table', { name: 'Before and after correction' });
+    expect(within(comparison).getByText('71.13')).toBeInTheDocument(); // persisted total, not recomputed 69.50
+    expect(within(comparison).queryByText('Other administrator notes')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm and save correction' }));
+    await screen.findByText(/your unsaved changes are retained/);
+    expect(screen.getByRole('button', { name: 'Confirm and save correction' })).toBeDisabled();
+    expect((calls.find((c) => c.method === 'PUT')!.body as { rowVersion: number }).rowVersion).toBe(
+      9,
+    );
+    await user.click(screen.getByRole('button', { name: 'Reload current data; keep my edits' }));
+    await screen.findByRole('button', { name: 'Review changes' });
+    expect(screen.getByLabelText('Overall notes (optional)')).toHaveValue('My unsaved correction');
+    expect(screen.getByLabelText('Reason for editing (required)')).toHaveValue('Fix scoring error');
+    await user.click(screen.getByRole('button', { name: 'Review changes' }));
+    expect(
+      within(screen.getByRole('table')).getByText('Other administrator notes'),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm and save correction' }));
+    await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+    const last = calls.filter((c) => c.method === 'PUT').at(-1)!.body as {
+      rowVersion: number;
+      overallNotes: string;
+    };
+    expect(last).toMatchObject({ rowVersion: 10, overallNotes: 'My unsaved correction' });
+  });
+
+  it('can explicitly discard stale edits and load the current submission', async () => {
+    const latest = detail({}, { rowVersion: 10, overallNotes: 'Current notes' });
+    mockApi(adminUser, (c) =>
+      c.method === 'PUT'
+        ? { status: 409, body: { error: { code: 'EVALUATION_CONFLICT', message: 'Changed' } } }
+        : { status: 200, body: latest },
+    );
+    render(<EditSubmission detail={detail()} onSaved={vi.fn()} onClose={vi.fn()} />);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Reason for editing (required)'), 'Correction reason');
+    await user.click(screen.getByRole('button', { name: 'Review changes' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm and save correction' }));
+    await user.click(await screen.findByRole('button', { name: 'Reload and discard my edits' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Overall notes (optional)')).toHaveValue('Current notes'),
+    );
+  });
+});
+
+describe('Visible per-judge submission editing', () => {
+  it('shows Edit Submission beside each submitted evaluation, but not a draft', async () => {
+    mockApi(adminUser, (c) =>
+      c.url.startsWith('/api/admin/evaluations?') ? { status: 200, body: listResponse } : undefined,
+    );
+    renderAt('/admin/evaluations');
+    const links = await screen.findAllByRole('link', { name: /Edit Submission.*Judge One/ });
+    for (const link of links)
+      expect(link).toHaveAttribute('href', '/admin/evaluations/7?edit=1&teamId=1');
+    for (const link of screen.getAllByRole('link', { name: /Edit Submission.*Judge Two/ }))
+      expect(link).toHaveAttribute('href', '/admin/evaluations/8?edit=1&teamId=1');
+    expect(
+      screen.queryByRole('link', { name: /Edit Submission.*Youmna Admin/ }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getAllByRole('button', { name: 'View evaluations for Falcons' })[0]!,
+    );
+    expect(
+      await screen.findByRole('region', { name: 'Evaluations for Falcons' }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /Edit Submission/ })).toHaveLength(2);
+  });
+  it.each([0, 1, 2, 3])(
+    'renders %i actual assigned judges without hardcoded placeholders',
+    async (count) => {
+      const team = listResponse.teams[0]!;
+      const judges = team.judges.slice(0, count).map((j) => ({
+        ...j,
+        status: 'submitted' as const,
+        totalScore: j.totalScore ?? 57,
+        ratedCount: 8,
+      }));
+      mockApi(adminUser, (c) =>
+        c.url.startsWith('/api/admin/evaluations?')
+          ? {
+              status: 200,
+              body: {
+                ...listResponse,
+                teams: [{ ...team, judges, assignedJudges: count, submitted: count, pending: 0 }],
+              },
+            }
+          : undefined,
+      );
+      renderAt('/admin/evaluations?teamId=1');
+      await screen.findByRole('region', { name: 'Evaluations for Falcons' });
+      expect(screen.queryAllByRole('link', { name: /Edit Submission/ })).toHaveLength(count);
+      expect(
+        screen.getByText(new RegExp(`${count} of ${count} assigned judge`)),
+      ).toBeInTheDocument();
+    },
+  );
+  it('direct edit links open the selected judge and save to that evaluation API only', async () => {
+    const d = detail(
+      {
+        judge: {
+          id: 3,
+          fullName: 'Judge Two',
+          email: 'judge2@example.com',
+          role: 'judge',
+          accountStatus: 'active',
+        },
+      },
+      { id: 8, judgeId: 3, overallNotes: 'Second judge original notes' },
+    );
+    const calls = mockApi(adminUser, (c) =>
+      c.url === '/api/admin/evaluations/8/submission'
+        ? { status: 200, body: d }
+        : c.url === '/api/admin/evaluations/8'
+          ? { status: 200, body: d }
+          : c.url === '/api/admin/evaluations/8/history'
+            ? { status: 200, body: { events: [] } }
+            : undefined,
+    );
+    renderAt('/admin/evaluations/8?edit=1&teamId=1');
+    let dialog = await screen.findByRole('dialog', { name: 'Edit Submission' });
+    expect(dialog).toHaveTextContent('Judge Two');
+    expect(within(dialog).getAllByRole('radiogroup')).toHaveLength(8);
+    expect(within(dialog).getByLabelText('Overall notes (optional)')).toHaveValue(
+      'Second judge original notes',
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText('Reason for editing (required)'),
+      'Verified selected judge correction',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Review changes' }));
+    dialog = screen.getByRole('dialog');
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Confirm and save correction' }),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(calls.filter((c) => c.method === 'PUT').map((c) => c.url)).toEqual([
+      '/api/admin/evaluations/8/submission',
+    ]);
+    expect(screen.getByRole('link', { name: /^.\sEvaluations$/ })).toHaveAttribute(
+      'href',
+      '/admin/evaluations?teamId=1',
+    );
   });
 });

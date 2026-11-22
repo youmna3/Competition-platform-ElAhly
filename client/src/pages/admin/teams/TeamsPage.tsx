@@ -103,7 +103,7 @@ export function TeamsPage() {
           className="inline-flex items-center gap-1 uppercase hover:text-ink focus-visible:outline-2 focus-visible:outline-ischool-blue"
         >
           {label}
-          <span aria-hidden className={active ? 'text-ahly-red' : 'text-black/25'}>
+          <span aria-hidden className={active ? 'text-ischool-blue-dark' : 'text-black/25'}>
             {active ? (dir === 'asc' ? '▲' : '▼') : '↕'}
           </span>
         </button>
@@ -228,17 +228,14 @@ export function TeamsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-ahly-red">Administrator</p>
+          <p className="eyebrow">Administrator</p>
           <h1 className="text-2xl font-bold sm:text-3xl">Teams</h1>
           <p className="mt-1 text-sm text-black/60">
             All teams in the iSchool × Al Ahly competition. Teams are archived, never deleted.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link
-            to="/admin/teams/import"
-            className="inline-flex items-center rounded-full border border-black/15 bg-white px-5 py-2.5 text-sm font-semibold hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-ischool-blue"
-          >
+          <Link to="/admin/teams/import" className="secondary-link">
             Import teams
           </Link>
           <Button onClick={() => setDialog({ kind: 'create' })}>+ Add team</Button>
@@ -322,12 +319,12 @@ export function TeamsPage() {
           </p>
           <Card className="hidden overflow-x-auto !p-0 lg:block">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-black/5 text-xs tracking-wide text-black/50">
+              <thead className="border-b border-black/5 text-xs tracking-wide text-muted">
                 <tr>
                   <th scope="col" className="w-10 px-4 py-3">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 accent-ahly-red"
+                      className="h-4 w-4 accent-ischool-blue"
                       checked={allSelected}
                       onChange={toggleAll}
                       aria-label="Select all active teams on this page"
@@ -349,13 +346,13 @@ export function TeamsPage() {
                 {teams.map((t) => (
                   <tr
                     key={t.id}
-                    className={t.status === 'archived' ? 'bg-black/[0.02] text-black/55' : ''}
+                    className={t.status === 'archived' ? 'bg-black/[0.02] text-muted' : ''}
                   >
                     <td className="px-4 py-3">
                       {t.status === 'active' && (
                         <input
                           type="checkbox"
-                          className="h-4 w-4 accent-ahly-red"
+                          className="h-4 w-4 accent-ischool-blue"
                           checked={selected.has(t.id)}
                           onChange={() => toggle(t)}
                           aria-label={`Select ${t.teamCode}`}
@@ -400,7 +397,7 @@ export function TeamsPage() {
                     {t.status === 'active' && (
                       <input
                         type="checkbox"
-                        className="mt-1 h-4 w-4 accent-ahly-red"
+                        className="mt-1 h-4 w-4 accent-ischool-blue"
                         checked={selected.has(t.id)}
                         onChange={() => toggle(t)}
                         aria-label={`Select ${t.teamCode}`}
@@ -423,7 +420,7 @@ export function TeamsPage() {
                     </span>
                   )}
                   {t.assignedJudges > 0 && (
-                    <p className="text-xs text-black/55">
+                    <p className="text-xs text-muted">
                       {t.assignedJudges} judge{t.assignedJudges === 1 ? '' : 's'} assigned
                     </p>
                   )}

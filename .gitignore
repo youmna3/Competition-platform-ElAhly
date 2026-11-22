@@ -9,3 +9,8 @@ backups/
 *.log
 .DS_Store
 Thumbs.db
+
+/artifacts/
+*.zip
+
+/docs/screenshots/

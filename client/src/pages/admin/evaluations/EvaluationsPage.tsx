@@ -13,6 +13,7 @@ import {
 import { api } from '../../../api/client';
 import { FullPageSpinner } from '../../../components/FullPageSpinner';
 import { Alert, Badge, Button, Card, SelectField } from '../../../components/ui';
+import { HistoricalSubmissions } from './HistoricalSubmissions';
 
 export const PROGRESS_TONES: Record<EvaluationProgress, 'gray' | 'gold' | 'green'> = {
   not_started: 'gray',
@@ -30,16 +31,16 @@ export const formatDateTime = (value: string | null) =>
 /** Header shared by the two evaluation views. */
 export function EvaluationsHeader({ children }: { children?: ReactNode }) {
   const tab = ({ isActive }: { isActive: boolean }) =>
-    `rounded-full px-4 py-1.5 text-sm font-semibold transition ${isActive ? 'bg-ink text-white' : 'text-black/65 hover:bg-black/5'}`;
+    `inline-flex min-h-11 items-center rounded-xl px-4 py-2 text-sm font-semibold transition ${isActive ? 'bg-ischool-blue text-white' : 'text-muted hover:bg-ischool-blue-soft'}`;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-ahly-red">Administrator</p>
+          <p className="eyebrow">Administrator</p>
           <h1 className="text-2xl font-bold sm:text-3xl">Evaluations</h1>
           <p className="mt-1 max-w-2xl text-sm text-black/60">
             Review every judge’s evaluation and track progress. Averages here are provisional;
-            official results come later.
+            official results are available on the Leaderboard.
           </p>
         </div>
         {children}
@@ -56,11 +57,11 @@ export function EvaluationsHeader({ children }: { children?: ReactNode }) {
   );
 }
 
-function JudgeLine({ j }: { j: AdminEvaluationJudge }) {
+function JudgeLine({ j, teamId }: { j: AdminEvaluationJudge; teamId: number }) {
   const label = (
     <>
       <span className="font-medium">{j.fullName}</span>
-      {j.role === 'admin' && <span className="text-xs text-black/50"> (admin)</span>}
+      {j.role === 'admin' && <span className="text-xs text-muted"> (admin)</span>}
     </>
   );
   return (
@@ -85,11 +86,66 @@ function JudgeLine({ j }: { j: AdminEvaluationJudge }) {
             : ''}
       </span>
       {j.rubricVersionNo != null && (
-        <span className="text-xs text-black/45">v{j.rubricVersionNo}</span>
+        <span className="text-xs text-muted">v{j.rubricVersionNo}</span>
       )}
       {j.reopenedCount > 0 && <Badge tone="red">Reopened ×{j.reopenedCount}</Badge>}
       {j.accountStatus === 'disabled' && <Badge tone="gray">Disabled</Badge>}
+      {j.status === 'submitted' && j.evaluationId != null && (
+        <Link
+          to={`/admin/evaluations/${j.evaluationId}?edit=1&teamId=${teamId}`}
+          className="action-link !min-h-9 !px-3 !py-1.5 !text-xs"
+          aria-label={`Edit Submission — ${j.fullName}`}
+        >
+          Edit Submission
+        </Link>
+      )}
     </li>
+  );
+}
+
+function TeamEvaluations({ team, onBack }: { team: AdminTeamEvaluations; onBack: () => void }) {
+  return (
+    <section className="space-y-4" aria-label={`Evaluations for ${team.name}`}>
+      <Card className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="eyebrow">{team.teamCode}</p>
+            <h2 className="mt-1 text-xl font-bold">{team.name}</h2>
+            <p className="mt-1 text-sm text-muted">{team.projectName}</p>
+          </div>
+          <Button variant="secondary" onClick={onBack}>
+            All teams
+          </Button>
+        </div>
+        <TeamFlags t={team} />
+        <p className="text-sm">
+          {team.submitted} of {team.assignedJudges} assigned judge
+          {team.assignedJudges === 1 ? '' : 's'} submitted · Team average:{' '}
+          <strong>
+            {team.provisionalAverage == null ? '—' : formatScore(team.provisionalAverage)}
+          </strong>
+        </p>
+        <p className="text-sm text-muted">
+          Review each judge separately. Edit Submission corrects that judge’s submitted ratings and
+          notes, with a reason and confirmation.
+        </p>
+      </Card>
+      {team.judges.length ? (
+        <ul className="grid gap-4 xl:grid-cols-3">
+          {team.judges.map((judge) => (
+            <li key={judge.judgeId}>
+              <Card className="h-full">
+                <ul>
+                  <JudgeLine j={judge} teamId={team.teamId} />
+                </ul>
+              </Card>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Card>No judges assigned to this team.</Card>
+      )}
+    </section>
   );
 }
 
@@ -145,7 +201,16 @@ export function EvaluationsPage() {
   }
 
   const query = new URLSearchParams();
-  for (const key of ['search', 'judgeId', 'status', 'version', 'completion', 'sort', 'dir']) {
+  for (const key of [
+    'search',
+    'teamId',
+    'judgeId',
+    'status',
+    'version',
+    'completion',
+    'sort',
+    'dir',
+  ]) {
     if (get(key)) query.set(key, get(key));
   }
   query.set('teamStatus', get('teamStatus', 'active'));
@@ -157,12 +222,20 @@ export function EvaluationsPage() {
     placeholderData: keepPreviousData,
   });
   const data = list.data;
+  const selectedTeam = data?.teams.find((team) => team.teamId === Number(get('teamId')));
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
-  const filtered = ['search', 'judgeId', 'status', 'version', 'completion'].some((k) => get(k));
+  const filtered = ['search', 'teamId', 'judgeId', 'status', 'version', 'completion'].some((k) =>
+    get(k),
+  );
 
   return (
     <div className="space-y-6">
-      <EvaluationsHeader />
+      <EvaluationsHeader>
+        <Button variant="secondary" disabled={list.isFetching} onClick={() => void list.refetch()}>
+          {list.isFetching ? 'Refreshing…' : 'Refresh'}
+        </Button>
+      </EvaluationsHeader>
+      <HistoricalSubmissions />
 
       <Card className="grid gap-3 !p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-1.5 sm:col-span-2">
@@ -273,114 +346,144 @@ export function EvaluationsPage() {
           <p className="text-sm text-black/60" role="status">
             {data!.total} team{data!.total === 1 ? '' : 's'}
           </p>
-          <Card className="hidden overflow-x-auto !p-0 lg:block">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-black/5 text-xs tracking-wide text-black/50 uppercase">
-                <tr>
-                  <th scope="col" className="px-5 py-3 font-semibold">
-                    Team
-                  </th>
-                  <th scope="col" className="px-3 py-3 font-semibold">
-                    Judges
-                  </th>
-                  <th scope="col" className="px-3 py-3 font-semibold">
-                    Submitted
-                  </th>
-                  <th scope="col" className="px-3 py-3 font-semibold">
-                    Provisional average
-                  </th>
-                  <th scope="col" className="px-3 py-3 font-semibold">
-                    Rubric
-                  </th>
-                  <th scope="col" className="px-5 py-3 font-semibold">
-                    Last submission
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/5 align-top">
+          {get('teamId') ? (
+            selectedTeam && !list.isPlaceholderData ? (
+              <TeamEvaluations team={selectedTeam} onBack={() => update({ teamId: '' })} />
+            ) : (
+              <FullPageSpinner label="Loading team evaluations…" />
+            )
+          ) : (
+            <>
+              <Card className="hidden overflow-x-auto !p-0 lg:block">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-black/5 text-xs tracking-wide text-muted uppercase">
+                    <tr>
+                      <th scope="col" className="px-5 py-3 font-semibold">
+                        Team
+                      </th>
+                      <th scope="col" className="px-3 py-3 font-semibold">
+                        Judges
+                      </th>
+                      <th scope="col" className="px-3 py-3 font-semibold">
+                        Submitted
+                      </th>
+                      <th scope="col" className="px-3 py-3 font-semibold">
+                        Provisional average
+                      </th>
+                      <th scope="col" className="px-3 py-3 font-semibold">
+                        Rubric
+                      </th>
+                      <th scope="col" className="px-5 py-3 font-semibold">
+                        Last submission
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/5 align-top">
+                    {data!.teams.map((t) => (
+                      <tr key={t.teamId}>
+                        <td className="px-5 py-3">
+                          <Link
+                            to={`/admin/evaluations?teamId=${t.teamId}`}
+                            className="font-semibold hover:underline"
+                          >
+                            {t.teamCode} · {t.name}
+                          </Link>
+                          <p className="text-black/60">{t.projectName}</p>
+                          <div className="mt-1.5">
+                            <TeamFlags t={t} />
+                          </div>
+                          <Button
+                            variant="secondary"
+                            className="mt-3 !min-h-9 !px-3 !py-1.5 !text-xs"
+                            onClick={() => update({ teamId: String(t.teamId) })}
+                            aria-label={`View evaluations for ${t.name}`}
+                          >
+                            View evaluations
+                          </Button>
+                        </td>
+                        <td className="px-3 py-3">
+                          {t.judges.length ? (
+                            <ul className="space-y-1.5">
+                              {t.judges.map((j) => (
+                                <JudgeLine key={j.judgeId} j={j} teamId={t.teamId} />
+                              ))}
+                            </ul>
+                          ) : (
+                            <span className="text-muted">No judges assigned</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap tabular-nums">
+                          <strong>{t.submitted}</strong> / {t.assignedJudges}
+                          {t.pending > 0 && (
+                            <p className="text-xs text-muted">{t.pending} pending</p>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 tabular-nums">
+                          {t.provisionalAverage != null ? (
+                            <>
+                              <strong>{formatScore(t.provisionalAverage)}</strong>
+                              {t.mixedVersions && (
+                                <p className="text-xs text-ahly-red-dark">not comparable</p>
+                              )}
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {t.versions.length ? t.versions.map((v) => `v${v}`).join(', ') : '—'}
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap text-black/65">
+                          {formatDateTime(t.lastSubmittedAt)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+              <ul className="space-y-3 lg:hidden">
                 {data!.teams.map((t) => (
-                  <tr key={t.teamId}>
-                    <td className="px-5 py-3">
-                      <Link
-                        to={`/admin/teams/${t.teamId}`}
-                        className="font-semibold hover:underline"
-                      >
-                        {t.teamCode} · {t.name}
-                      </Link>
-                      <p className="text-black/60">{t.projectName}</p>
-                      <div className="mt-1.5">
-                        <TeamFlags t={t} />
+                  <li key={t.teamId}>
+                    <Card className="space-y-3 !p-4">
+                      <div>
+                        <Link
+                          to={`/admin/evaluations?teamId=${t.teamId}`}
+                          className="font-semibold hover:underline"
+                        >
+                          {t.teamCode} · {t.name}
+                        </Link>
+                        <p className="text-sm text-black/60">{t.projectName}</p>
                       </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      {t.judges.length ? (
-                        <ul className="space-y-1.5">
+                      <TeamFlags t={t} />
+                      <Button
+                        variant="secondary"
+                        onClick={() => update({ teamId: String(t.teamId) })}
+                        aria-label={`View evaluations for ${t.name}`}
+                      >
+                        View evaluations
+                      </Button>
+                      <p className="text-sm tabular-nums">
+                        <strong>{t.submitted}</strong>/{t.assignedJudges} submitted
+                        {t.provisionalAverage != null && (
+                          <> · average {formatScore(t.provisionalAverage)}</>
+                        )}
+                        {t.versions.length > 0 && (
+                          <> · {t.versions.map((v) => `v${v}`).join(', ')}</>
+                        )}
+                      </p>
+                      {t.judges.length > 0 && (
+                        <ul className="space-y-1.5 border-t border-black/5 pt-2">
                           {t.judges.map((j) => (
-                            <JudgeLine key={j.judgeId} j={j} />
+                            <JudgeLine key={j.judgeId} j={j} teamId={t.teamId} />
                           ))}
                         </ul>
-                      ) : (
-                        <span className="text-black/45">No judges assigned</span>
                       )}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap tabular-nums">
-                      <strong>{t.submitted}</strong> / {t.assignedJudges}
-                      {t.pending > 0 && (
-                        <p className="text-xs text-black/55">{t.pending} pending</p>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 tabular-nums">
-                      {t.provisionalAverage != null ? (
-                        <>
-                          <strong>{formatScore(t.provisionalAverage)}</strong>
-                          {t.mixedVersions && (
-                            <p className="text-xs text-ahly-red-dark">not comparable</p>
-                          )}
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      {t.versions.length ? t.versions.map((v) => `v${v}`).join(', ') : '—'}
-                    </td>
-                    <td className="px-5 py-3 whitespace-nowrap text-black/65">
-                      {formatDateTime(t.lastSubmittedAt)}
-                    </td>
-                  </tr>
+                    </Card>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          </Card>
-          <ul className="space-y-3 lg:hidden">
-            {data!.teams.map((t) => (
-              <li key={t.teamId}>
-                <Card className="space-y-3 !p-4">
-                  <div>
-                    <Link to={`/admin/teams/${t.teamId}`} className="font-semibold hover:underline">
-                      {t.teamCode} · {t.name}
-                    </Link>
-                    <p className="text-sm text-black/60">{t.projectName}</p>
-                  </div>
-                  <TeamFlags t={t} />
-                  <p className="text-sm tabular-nums">
-                    <strong>{t.submitted}</strong>/{t.assignedJudges} submitted
-                    {t.provisionalAverage != null && (
-                      <> · average {formatScore(t.provisionalAverage)}</>
-                    )}
-                    {t.versions.length > 0 && <> · {t.versions.map((v) => `v${v}`).join(', ')}</>}
-                  </p>
-                  {t.judges.length > 0 && (
-                    <ul className="space-y-1.5 border-t border-black/5 pt-2">
-                      {t.judges.map((j) => (
-                        <JudgeLine key={j.judgeId} j={j} />
-                      ))}
-                    </ul>
-                  )}
-                </Card>
-              </li>
-            ))}
-          </ul>
+              </ul>
+            </>
+          )}
           {totalPages > 1 && (
             <div className="flex items-center justify-between">
               <Button

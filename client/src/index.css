@@ -7,9 +7,15 @@
   --color-ahly-gold: #d9a428;
   --color-ahly-gold-light: #f6e7c1;
   --color-ischool-blue: #056fec;
+  --color-ischool-blue-dark: #045bc4;
+  --color-ischool-blue-soft: #edf5ff;
+  --color-ischool-blue-light: #d7e9ff;
+  --color-muted: #526176;
+  --color-line: #dce4ee;
+  --shadow-card: 0 2px 8px -4px #17283f20;
   --color-ischool-orange: #ff7f1c;
-  --color-ink: #111111;
-  --color-surface: #f7f7f8;
+  --color-ink: #17283f;
+  --color-surface: #f4f7fb;
 
   --font-sans:
     'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial,
@@ -18,18 +24,92 @@
 
 html {
   -webkit-font-smoothing: antialiased;
+  scroll-padding-top: 10rem;
 }
 
 body {
   @apply bg-surface text-ink font-sans;
 }
 
-/* Thin brand stripe: Al Ahly red, gold, iSchool blue. */
+/* Blue leads the partnership; gold and Al Ahly red remain accents. */
 .brand-stripe {
   background: linear-gradient(
     90deg,
-    var(--color-ahly-red) 0 60%,
-    var(--color-ahly-gold) 60% 85%,
-    var(--color-ischool-blue) 85% 100%
+    var(--color-ischool-blue) 0 80%,
+    var(--color-ahly-gold) 80% 90%,
+    var(--color-ahly-red) 90% 100%
   );
+}
+
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-ischool-blue);
+    outline-offset: 3px;
+  }
+  input,
+  select,
+  textarea {
+    accent-color: var(--color-ischool-blue);
+  }
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+  button:not(:disabled),
+  select {
+    cursor: pointer;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    letter-spacing: -0.025em;
+  }
+  main {
+    min-width: 0;
+  }
+  main table thead {
+    background: var(--color-ischool-blue-soft);
+    color: var(--color-muted);
+  }
+  main table th {
+    vertical-align: middle;
+  }
+  main table td {
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+  main table tbody tr {
+    transition: background-color 150ms;
+  }
+  main table tbody tr:hover {
+    background-color: var(--color-ischool-blue-soft);
+  }
+  ::selection {
+    background: var(--color-ischool-blue-light);
+    color: var(--color-ink);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .action-link {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-ischool-blue px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-ischool-blue-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ischool-blue;
+  }
+  .secondary-link {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-ischool-blue-dark transition hover:border-ischool-blue/30 hover:bg-ischool-blue-soft;
+  }
+  .eyebrow {
+    @apply text-xs font-semibold tracking-widest text-ischool-blue-dark uppercase;
+  }
 }

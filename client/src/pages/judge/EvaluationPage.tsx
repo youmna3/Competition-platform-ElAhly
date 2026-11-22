@@ -108,6 +108,11 @@ export function EvaluationPage() {
   const header = (
     <div className="space-y-4">
       <BackLink />
+      {evaluation?.adminModifiedAt && (
+        <Alert tone="info" title="Modified by an administrator">
+          Last administrator correction: {formatDateTime(evaluation.adminModifiedAt)}.
+        </Alert>
+      )}
       <Card className="grid gap-4 sm:grid-cols-3">
         <Info label="Team ID" value={team.teamCode} />
         <Info label="Team" value={team.name} />
@@ -177,13 +182,13 @@ export function EvaluationPage() {
               </p>
             </div>
             <p className="text-right">
-              <span className="block text-xs font-semibold tracking-wide text-black/50 uppercase">
+              <span className="block text-xs font-semibold tracking-wide text-muted uppercase">
                 Final score
               </span>
-              <span className="text-3xl font-bold text-ahly-red">
+              <span className="text-3xl font-bold text-ischool-blue-dark">
                 {formatScore(evaluation.totalScore)}
               </span>
-              <span className="text-black/55"> / 100</span>
+              <span className="text-muted"> / 100</span>
             </p>
           </Card>
         ) : (
@@ -246,7 +251,7 @@ function emptyEvaluation(rubric: RubricVersion): EvaluationDetail {
 
 function BackLink() {
   return (
-    <Link to="/judge" className="text-sm font-semibold text-ischool-blue hover:underline">
+    <Link to="/judge" className="text-sm font-semibold text-ischool-blue-dark hover:underline">
       ← My teams
     </Link>
   );
@@ -255,23 +260,30 @@ function BackLink() {
 export function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-semibold tracking-wide text-black/50 uppercase">{label}</p>
+      <p className="text-xs font-semibold tracking-wide text-muted uppercase">{label}</p>
       <p className="mt-1 font-semibold">{value}</p>
     </div>
   );
 }
 
-export function RubricIntro({ rubric }: { rubric: RubricVersion }) {
+export function RubricIntro({
+  rubric,
+  nested = false,
+}: {
+  rubric: RubricVersion;
+  nested?: boolean;
+}) {
+  const Heading = nested ? 'h2' : 'h1';
   return (
     <Card className="space-y-2">
-      <p className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+      <p className="text-xs font-semibold tracking-wide text-muted uppercase">
         Rubric · version {rubric.versionNo}
       </p>
-      <h1 className="text-xl font-bold sm:text-2xl">{rubric.title}</h1>
+      <Heading className="text-xl font-bold sm:text-2xl">{rubric.title}</Heading>
       {rubric.instructions && (
         <p className="whitespace-pre-wrap text-sm text-black/70">{rubric.instructions}</p>
       )}
-      <p className="text-xs text-black/55">
+      <p className="text-xs text-muted">
         Section score = (rating 1 + rating 2) ÷ 10 × section weight. Final score = the four section
         scores added together, out of 100.
       </p>
@@ -301,7 +313,7 @@ function NoteField({
   if (readOnly) {
     return value ? (
       <div className="rounded-xl bg-black/[0.03] px-3.5 py-2.5 text-sm">
-        <p className="text-xs font-semibold text-black/50">{label}</p>
+        <p className="text-xs font-semibold text-muted">{label}</p>
         <p className="mt-0.5 whitespace-pre-wrap">{value}</p>
       </div>
     ) : null;
@@ -357,7 +369,7 @@ export function ScoringForm({
           <Card key={s.id} className="!p-0">
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-black/5 px-5 py-4 sm:px-6">
               <div className="min-w-0">
-                <p className="text-xs font-semibold tracking-wide text-black/45 uppercase">
+                <p className="text-xs font-semibold tracking-wide text-muted uppercase">
                   Section {i + 1} · {s.weightPercent}% of the final score
                 </p>
                 <h2 className="text-lg font-bold">{s.title}</h2>
@@ -366,14 +378,11 @@ export function ScoringForm({
                 )}
               </div>
               <p className="shrink-0 text-right" aria-live="polite">
-                <span className="block text-xs text-black/55">Section score</span>
+                <span className="block text-xs text-muted">Section score</span>
                 <span className="text-xl font-bold tabular-nums">
                   {part.score != null ? formatScore(part.score) : '—'}
                 </span>
-                <span className="text-sm text-black/55">
-                  {' '}
-                  / {formatScore(s.weightPercent ?? 0)}
-                </span>
+                <span className="text-sm text-muted"> / {formatScore(s.weightPercent ?? 0)}</span>
               </p>
             </div>
             <ol className="divide-y divide-black/5">
@@ -451,9 +460,7 @@ export function ScoringForm({
           readOnly={readOnly}
           rows={4}
         />
-        {readOnly && !input.overallNotes && (
-          <p className="text-sm text-black/45">No overall notes.</p>
-        )}
+        {readOnly && !input.overallNotes && <p className="text-sm text-muted">No overall notes.</p>}
       </Card>
     </div>
   );
@@ -645,7 +652,8 @@ function EditableEvaluation({
               {breakdown.total != null ? (
                 <>
                   Final score{' '}
-                  <strong className="text-ahly-red">{formatScore(breakdown.total)}</strong> / 100
+                  <strong className="text-ischool-blue-dark">{formatScore(breakdown.total)}</strong>{' '}
+                  / 100
                 </>
               ) : (
                 <>
@@ -759,7 +767,7 @@ function SubmitDialog({
             <th scope="row" className="py-2 text-left text-base font-bold">
               Final score
             </th>
-            <td className="py-2 text-right text-xl font-bold text-ahly-red tabular-nums">
+            <td className="py-2 text-right text-xl font-bold text-ischool-blue-dark tabular-nums">
               {formatScore(total)} / 100
             </td>
           </tr>

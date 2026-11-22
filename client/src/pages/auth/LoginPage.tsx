@@ -11,7 +11,7 @@ function BrandPanel() {
     <div className="relative hidden overflow-hidden bg-ink text-white lg:flex lg:w-[46%] lg:flex-col lg:justify-between lg:p-12">
       <div
         aria-hidden
-        className="absolute inset-0 bg-gradient-to-br from-ahly-red/80 via-ahly-red-dark/40 to-transparent"
+        className="absolute inset-0 bg-gradient-to-br from-ischool-blue/90 via-ischool-blue-dark/60 to-transparent"
       />
       <div
         aria-hidden
@@ -161,7 +161,7 @@ export function LoginPage() {
                 </Button>
               </form>
 
-              <p className="mt-6 border-t border-black/5 pt-4 text-xs leading-relaxed text-black/55">
+              <p className="mt-6 border-t border-black/5 pt-4 text-xs leading-relaxed text-muted">
                 Forgot your password or locked out? Ask the competition administrator to reset it.
                 Accounts are created by the administrator; there is no public sign-up.
               </p>

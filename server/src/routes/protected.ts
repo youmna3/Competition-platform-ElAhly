@@ -8,7 +8,7 @@ import { rubricAdminRouter } from '../rubric/routes.js';
 import { getPublishedRubric } from '../rubric/service.js';
 import { evaluationsRouter } from '../evaluations/routes.js';
 import { reviewRouter } from '../review/routes.js';
-import { resultsRouter } from '../results/routes.js';
+import { judgeLeaderboardRouter, resultsRouter } from '../results/routes.js';
 
 /** GET /api/admin/* — administrators only. */
 export function adminRouter(pool: Pool): Router {
@@ -55,6 +55,7 @@ export function adminRouter(pool: Pool): Router {
 export function judgeRouter(pool: Pool): Router {
   const router = Router();
   router.use(requireAuth, requireRole('judge', 'admin'));
+  router.use('/', judgeLeaderboardRouter(pool));
 
   /** The published rubric, read-only. null until an administrator publishes one. */
   router.get('/rubric', async (_req, res) => {

@@ -1,9 +1,10 @@
+import { testMysql as mysql } from './helpers.js';
 /**
  * Phase 8 demo dataset: seeds the scratch test database exactly like
  * `npm run db:demo` seeds the demo database, then checks every expected rank,
  * score and status that the Windows checklist relies on.
  */
-import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
+import { type Pool, type RowDataPacket } from 'mysql2/promise';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatScore } from '@judging/shared';
 import { DEMO_EXPECTED, seedPhase8Demo } from '../../scripts/lib/demoSeed.js';

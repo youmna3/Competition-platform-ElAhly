@@ -15,7 +15,7 @@ const id = z.coerce.number().int().positive().max(4_294_967_295);
 const rowVersion = z.number().int().min(0).max(4_294_967_295);
 
 // Shape only; ratings, ids and lengths are checked against the rubric in the service.
-const saveSchema = z
+export const saveSchema = z
   .object({
     rowVersion,
     ratings: z

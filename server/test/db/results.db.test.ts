@@ -1,3 +1,4 @@
+import { testMysql as mysql } from './helpers.js';
 /**
  * Phase 8: official results and the administrator dashboard, through the real
  * API and a real (scratch) MySQL database. Scoring, competition ranking and
@@ -5,12 +6,13 @@
  * ranking, rubric versions, access rules, session expiry and concurrency.
  */
 import bcrypt from 'bcryptjs';
-import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
+import { type Pool, type RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type {
   DashboardResponse,
   EvaluationDetail,
+  JudgeLeaderboardResponse,
   ResultsResponse,
   RubricContent,
   TeamResult,
@@ -209,6 +211,135 @@ afterAll(async () => {
 });
 
 describe('access and validation', () => {
+  it('allows both authenticated roles to read the judge leaderboard, with no mutation endpoints', async () => {
+    expect((await request(app).get('/api/judge/leaderboard')).status).toBe(401);
+    for (const agent of [admin, judge]) {
+      const response = await agent.get('/api/judge/leaderboard');
+      expect(response.status).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+      for (const method of ['post', 'put', 'patch', 'delete'] as const) {
+        expect((await agent[method]('/api/judge/leaderboard').send({ score: 100 })).status).toBe(
+          404,
+        );
+      }
+    }
+    for (const query of [
+      '?sort=judges',
+      '?sort=submitted',
+      '?include=notes',
+      '?dir=invalid',
+      `?search=${'a'.repeat(101)}`,
+    ]) {
+      expect((await judge.get(`/api/judge/leaderboard${query}`)).status).toBe(400);
+    }
+  });
+
+  it('never leaks judge identities, individual scores, notes or provisional scores and cannot search private names', async () => {
+    await publishRubric();
+    await assign([teamA], [judgeId, judge2Id]);
+    await assign([teamB], [judgeId, judge2Id]);
+    await evaluate(judge, teamA, S[80], 'Private evaluation notes');
+    await evaluate(judge2, teamA, S[90]);
+    await evaluate(judge, teamB, S[70]);
+    const response = await judge.get('/api/judge/leaderboard');
+    expect(response.status).toBe(200);
+    const body = response.body as JudgeLeaderboardResponse;
+    expect(body.official.teams).toEqual([
+      {
+        teamId: teamA,
+        teamCode: 'AHL-1',
+        name: 'Falcons',
+        projectName: 'Irrigation',
+        rank: 1,
+        score: 85,
+        rubricVersionNo: 1,
+      },
+    ]);
+    expect(body.notRanked.find((t) => t.teamId === teamB)).toEqual({
+      teamId: teamB,
+      teamCode: 'AHL-2',
+      name: 'Eagles',
+      projectName: 'Solar',
+      status: 'in_progress',
+    });
+    for (const key of [
+      'judges',
+      'judgeId',
+      'evaluationId',
+      'provisionalAverage',
+      'notes',
+      'reasons',
+      'assignedJudges',
+      'audit',
+    ]) {
+      expect(JSON.stringify(body)).not.toContain(`"${key}"`);
+    }
+    expect(JSON.stringify(body)).not.toContain('Judge One');
+    expect(JSON.stringify(body)).not.toContain('Private evaluation notes');
+    const searched = (await judge.get('/api/judge/leaderboard?search=Judge%20One')).body;
+    expect(searched.official.teams).toEqual([]);
+    expect(searched.notRanked).toEqual([]);
+    // The administrator still gets individual judge results on the original endpoint.
+    expect((await results()).official.teams[0]!.judges).toHaveLength(2);
+  });
+
+  it('keeps version-incompatible comparisons outside official judge rankings', async () => {
+    await publishRubric();
+    await assign([teamA, teamB], [judgeId]);
+    await evaluate(judge, teamA, S[80]);
+    await publishRubric([25, 25, 25, 25], 'New rubric');
+    await evaluate(judge, teamB, S[90]);
+    const { body } = await judge.get('/api/judge/leaderboard?search=Falcons');
+    expect(body.official.available).toBe(false);
+    expect(body.official.teams).toEqual([]);
+    expect(body.official.unavailableReason).toMatch(/different rubric versions/);
+    expect(body.notRanked).toEqual([
+      {
+        teamId: teamA,
+        teamCode: 'AHL-1',
+        name: 'Falcons',
+        projectName: 'Irrigation',
+        status: 'version_conflict',
+      },
+    ]);
+    expect(body).not.toHaveProperty('provisional');
+    expect(body.notRanked[0]).not.toHaveProperty('score');
+    expect(body.notRanked[0]).not.toHaveProperty('rank');
+  });
+
+  it('preserves exact ties and global ranks when judges search or sort scores', async () => {
+    await publishRubric();
+    await assign([teamA, teamB, teamC], [judgeId]);
+    await evaluate(judge, teamA, S[80]);
+    await evaluate(judge, teamB, S[80]);
+    await evaluate(judge, teamC, S[90]);
+    const response = await judge.get('/api/judge/leaderboard?sort=score&dir=asc');
+    expect(
+      response.body.official.teams.map((t: { rank: number; score: number }) => [t.rank, t.score]),
+    ).toEqual([
+      [2, 80],
+      [2, 80],
+      [1, 90],
+    ]);
+    const search = await judge.get('/api/judge/leaderboard?search=solar');
+    expect(search.body.official.teams.map((t: { rank: number }) => t.rank)).toEqual([2]);
+    const byName = await judge.get('/api/judge/leaderboard?sort=name&dir=asc');
+    expect(byName.body.official.teams.map((t: { name: string }) => t.name)).toEqual([
+      'Eagles',
+      'Falcons',
+      'Lions',
+    ]);
+  });
+
+  it('blocks expired and disabled sessions from judge leaderboard access', async () => {
+    const shortApp = makeTestApp(pool, { idleTimeoutMs: 300 });
+    const agent = await signIn(shortApp, 'judge@example.com', PASSWORD);
+    await new Promise((r) => setTimeout(r, 700));
+    expect((await agent.get('/api/judge/leaderboard')).status).toBe(401);
+    await admin.patch(`/api/admin/users/${judgeId}`).send({ status: 'disabled' });
+    expect((await judge.get('/api/judge/leaderboard')).status).toBe(401);
+  });
+
   it('serves results and the dashboard to administrators only', async () => {
     for (const path of ['/api/admin/results', '/api/admin/dashboard']) {
       expect((await request(app).get(path)).status, path).toBe(401);
@@ -619,5 +750,141 @@ describe('concurrency', () => {
       ['AHL-2', 1, 80],
       ['AHL-3', 1, 80],
     ]);
+  });
+});
+
+describe('administrator submission corrections', () => {
+  const body = (e: EvaluationDetail, stars = S[100]) => ({
+    rowVersion: e.rowVersion,
+    ratings: e.ratings.map((r, i) => ({ ...r, rating: stars[i], note: 'Corrected criterion' })),
+    sectionNotes: e.sectionNotes.map((n) => ({ ...n, note: 'Corrected section' })),
+    overallNotes: 'Corrected overall',
+    reason: 'Correcting a scoring mistake',
+    confirmed: true,
+  });
+  it('corrects another judge without assignment, retains snapshots, locks judges and recalculates ranks and dashboard', async () => {
+    await publishRubric();
+    await assign([teamA, teamB], [judgeId]);
+    const e = await evaluate(judge, teamA, S[80], 'Original notes');
+    await evaluate(judge, teamB, S[90]);
+    const original = (await admin.get(`/api/admin/evaluations/${e.id}/history`)).body.events;
+    const res = await admin.put(`/api/admin/evaluations/${e.id}/submission`).send(body(e));
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.evaluation).toMatchObject({
+      status: 'submitted',
+      submittedAt: e.submittedAt,
+      totalScore: 100,
+      judgeId,
+      teamId: teamA,
+      rubricVersionId: e.rubricVersionId,
+      rowVersion: e.rowVersion + 1,
+      overallNotes: 'Corrected overall',
+    });
+    expect(res.body.lastAdminCorrection.byEmail).toBe('youmna54@gmail.com');
+    const history = (await admin.get(`/api/admin/evaluations/${e.id}/history`)).body.events;
+    expect(history.slice(0, original.length)).toEqual(original);
+    const change = history.at(-1);
+    expect(change).toMatchObject({
+      event: 'admin_corrected',
+      previousScore: 80,
+      totalScore: 100,
+      reason: 'Correcting a scoring mistake',
+    });
+    expect(change.previousSnapshot.overallNotes).toBe('overall Original notes');
+    expect(change.previousSnapshot.ratings[0].note).toBe('Original notes');
+    expect(change.snapshot.ratings[0]).toMatchObject({ rating: 5, note: 'Corrected criterion' });
+    expect(change.snapshot.sections[0].note).toBe('Corrected section');
+    expect(ranking(await results())).toEqual([
+      ['AHL-1', 1, 100],
+      ['AHL-2', 2, 90],
+    ]);
+    expect((await dashboard()).evaluations.averageSubmittedScore).toBe(95);
+    expect(
+      (
+        await judge
+          .put(`/api/judge/evaluations/${e.id}`)
+          .send({ ...body(res.body.evaluation), reason: undefined, confirmed: undefined })
+      ).status,
+    ).toBe(409);
+    await expect(
+      pool.query('UPDATE evaluation_events SET reason=? WHERE id=?', ['tamper', change.id]),
+    ).rejects.toThrow();
+    await expect(
+      pool.query('UPDATE evaluations SET total_score=1 WHERE id=?', [e.id]),
+    ).rejects.toThrow();
+  });
+  it('allows own submissions and keeps the original retired rubric weights', async () => {
+    await publishRubric();
+    await assign([teamA], [adminId]);
+    const e = await evaluate(admin, teamA, S[80]);
+    await publishRubric([25, 25, 25, 25]);
+    const res = await admin.put(`/api/admin/evaluations/${e.id}/submission`).send(body(e, S[90]));
+    expect(res.status).toBe(200);
+    expect(res.body.evaluation.totalScore).toBe(90);
+    expect(res.body.evaluation.rubricVersionId).toBe(e.rubricVersionId);
+  });
+  it('refuses nonadmins, invalid reasons, missing confirmation, invalid ratings and identity changes without altering history', async () => {
+    await publishRubric();
+    await assign([teamA], [judgeId]);
+    const e = await evaluate(judge, teamA, S[80]);
+    const url = `/api/admin/evaluations/${e.id}/submission`;
+    expect((await judge.put(url).send(body(e))).status).toBe(403);
+    expect((await request(app).put(url).send(body(e))).status).toBe(401);
+    for (const patch of [
+      { reason: '' },
+      { confirmed: false },
+      { teamId: teamB },
+      { judgeId: adminId },
+      { rubricVersionId: 999 },
+      { ratings: body(e).ratings.slice(1) },
+      { ratings: body(e).ratings.map((r) => ({ ...r, rating: 6 })) },
+      { ratings: body(e).ratings.map((r) => ({ ...r, rating: 1.5 })) },
+      { ratings: body(e).ratings.map((r) => ({ ...r, rating: null })) },
+      { ratings: body(e).ratings.map((r) => ({ ...r, criterionId: 999 })) },
+    ])
+      expect((await admin.put(url).send({ ...body(e), ...patch })).status).toBe(400);
+    expect((await admin.get(`/api/admin/evaluations/${e.id}`)).body.evaluation.totalScore).toBe(80);
+    expect(
+      (await admin.get(`/api/admin/evaluations/${e.id}/history`)).body.events.filter(
+        (x: { event: string }) => x.event === 'admin_corrected',
+      ),
+    ).toHaveLength(0);
+  });
+  it('rejects stale concurrent edits rather than silently overwriting', async () => {
+    await publishRubric();
+    await assign([teamA], [judgeId]);
+    const e = await evaluate(judge, teamA, S[80]);
+    const responses = await Promise.all(
+      [S[90], S[100]].map((stars) =>
+        admin.put(`/api/admin/evaluations/${e.id}/submission`).send(body(e, stars)),
+      ),
+    );
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(
+      (await admin.get(`/api/admin/evaluations/${e.id}/history`)).body.events.filter(
+        (x: { event: string }) => x.event === 'admin_corrected',
+      ),
+    ).toHaveLength(1);
+  });
+  it('corrects archived and unassigned historical submissions without restoring ranking eligibility', async () => {
+    await publishRubric();
+    await assign([teamA, teamB], [judgeId]);
+    const a = await evaluate(judge, teamA, S[80]);
+    const b = await evaluate(judge, teamB, S[90]);
+    await admin.post(`/api/admin/teams/${teamA}/archive`).send({ reason: 'Historical team' });
+    await admin.delete(`/api/admin/teams/${teamB}/judges/${judgeId}`);
+    for (const e of [a, b])
+      expect(
+        (await admin.put(`/api/admin/evaluations/${e.id}/submission`).send(body(e))).status,
+      ).toBe(200);
+    expect((await results()).official.teams).toHaveLength(0);
+    const historical = await admin.get('/api/admin/evaluations/historical');
+    expect(historical.status).toBe(200);
+    expect(historical.body.evaluations.map((e: { id: number }) => e.id).sort()).toEqual(
+      [a.id, b.id].sort(),
+    );
+    expect((await judge.get('/api/admin/evaluations/historical')).status).toBe(403);
+    expect((await admin.get(`/api/admin/evaluations/${a.id}`)).body.team.status).toBe('archived');
+    expect((await admin.get(`/api/admin/evaluations/${b.id}`)).body.judgeAssigned).toBe(false);
   });
 });

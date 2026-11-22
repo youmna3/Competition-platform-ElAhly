@@ -12,6 +12,7 @@ export function Modal({
   children,
   footer,
   size = 'md',
+  focusPanel = false,
 }: {
   title: string;
   description?: ReactNode;
@@ -20,6 +21,7 @@ export function Modal({
   children?: ReactNode;
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg';
+  focusPanel?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -30,9 +32,14 @@ export function Modal({
     const first = panel.current?.querySelector<HTMLElement>(
       'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])',
     );
-    first?.focus();
-    return () => opener?.focus?.();
-  }, []);
+    (focusPanel ? panel.current : (first ?? panel.current))?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      opener?.focus?.();
+    };
+  }, [focusPanel]);
 
   function onKeyDown(event: React.KeyboardEvent) {
     if (event.key === 'Escape' && canClose) {
@@ -45,7 +52,11 @@ export function Modal({
           'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
         ),
       );
-      if (items.length === 0) return;
+      if (items.length === 0) {
+        event.preventDefault();
+        panel.current.focus();
+        return;
+      }
       const first = items[0] as HTMLElement;
       const last = items[items.length - 1] as HTMLElement;
       if (event.shiftKey && document.activeElement === first) {
@@ -66,6 +77,7 @@ export function Modal({
       <div
         ref={panel}
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}

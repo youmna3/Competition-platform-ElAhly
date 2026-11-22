@@ -290,6 +290,17 @@ export async function updateUser(
       return toManaged((await getUser(conn, target.id)) as UserRow);
     });
   } catch (error) {
+    if (
+      ['ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT'].includes(
+        String((error as { code?: string })?.code),
+      )
+    ) {
+      throw new UserError(
+        409,
+        USER_ERRORS.USER_CONFLICT,
+        'Another administrator changed these accounts. Refresh and try again.',
+      );
+    }
     if (isDuplicate(error)) throw emailTaken();
     if (isLastAdminTrigger(error)) throw lastAdmin();
     throw error;

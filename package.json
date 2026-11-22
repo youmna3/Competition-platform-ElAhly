@@ -24,7 +24,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "npm run build:shared && npm run test -w server && npm run test -w client",
+    "test": "node --test scripts/package-source.test.mjs && npm run build:shared && npm run test -w server && npm run test -w client",
     "test:db": "npm run build:shared && npm run test:db -w server",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
     "db:check": "npm run build:shared && npm run db:check -w server",
@@ -40,7 +40,8 @@
     "db:demo": "npm run build:shared && npm run db:demo -w server --",
     "demo:dev": "npm run demo:dev -w server",
     "auth:secret": "npm run auth:secret -w server",
-    "auth:reset-password": "npm run build:shared && npm run auth:reset-password -w server --"
+    "auth:reset-password": "npm run build:shared && npm run auth:reset-password -w server --",
+    "package:source": "node scripts/package-source.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

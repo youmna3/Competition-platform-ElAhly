@@ -17,6 +17,7 @@ import { EvaluationsPage } from './pages/admin/evaluations/EvaluationsPage';
 import { JudgeProgressPage } from './pages/admin/evaluations/JudgeProgressPage';
 import { EvaluationReviewPage } from './pages/admin/evaluations/EvaluationReviewPage';
 import { LeaderboardPage } from './pages/admin/results/LeaderboardPage';
+import { CompetitionLeaderboardPage } from './pages/judge/CompetitionLeaderboardPage';
 
 export default function App() {
   return (
@@ -30,6 +31,14 @@ export default function App() {
         }
       >
         <Route path="/change-password" element={<ChangePasswordPage />} />
+        <Route
+          path="/leaderboard"
+          element={
+            <RequireAuth roles={['admin', 'judge']}>
+              <CompetitionLeaderboardPage />
+            </RequireAuth>
+          }
+        />
         <Route
           path="/admin"
           element={

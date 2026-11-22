@@ -150,7 +150,7 @@ export function RubricManagementPage() {
   const header = (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p className="text-sm font-medium text-ahly-red">Administrator</p>
+        <p className="eyebrow">Administrator</p>
         <h1 className="text-2xl font-bold sm:text-3xl">Rubric Management</h1>
         <p className="mt-1 max-w-2xl text-sm text-black/60">
           The one rubric every judge uses for every team. Published versions never change; edits go
@@ -165,7 +165,10 @@ export function RubricManagementPage() {
         )}
         {draft && <Badge tone="gold">Draft · version {draft.versionNo}</Badge>}
         {published && (
-          <Link to="/rubric" className="text-sm font-semibold text-ischool-blue hover:underline">
+          <Link
+            to="/rubric"
+            className="text-sm font-semibold text-ischool-blue-dark hover:underline"
+          >
             View as judges see it →
           </Link>
         )}
@@ -218,7 +221,7 @@ export function RubricManagementPage() {
                 {busy ? 'Opening…' : 'Edit rubric'}
               </Button>
             </Card>
-            <p className="text-sm text-black/55">
+            <p className="text-sm text-muted">
               Editing creates a draft copy. Judges keep using version {published.versionNo} until
               you publish the draft.
             </p>
@@ -298,7 +301,7 @@ export function RubricManagementPage() {
           </ul>
         )}
         {validation.save.length > 0 && (
-          <p className="text-xs text-black/55">● must be fixed before the draft can be saved.</p>
+          <p className="text-xs text-muted">● must be fixed before the draft can be saved.</p>
         )}
       </Card>
 
@@ -311,9 +314,7 @@ export function RubricManagementPage() {
             {dirty ? (
               <span className="font-semibold text-ahly-red-dark">● Unsaved changes</span>
             ) : (
-              <span className="text-black/55">
-                All changes saved · {formatDate(draft.updatedAt)}
-              </span>
+              <span className="text-muted">All changes saved · {formatDate(draft.updatedAt)}</span>
             )}
           </p>
           <div className="flex flex-wrap gap-2">
@@ -549,7 +550,7 @@ function PublishDialog({
           <label className="flex items-start gap-2">
             <input
               type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-ahly-red"
+              className="mt-0.5 h-4 w-4 accent-ischool-blue"
               checked={acknowledged}
               onChange={(e) => setAcknowledged(e.target.checked)}
             />

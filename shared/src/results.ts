@@ -104,6 +104,28 @@ export const RESULTS_SORTS = [
 ] as const;
 export type ResultsSort = (typeof RESULTS_SORTS)[number];
 
+/** Explicit allowlist for authenticated, read-only competition results. */
+export const LEADERBOARD_SORTS = ['rank', 'teamCode', 'name', 'projectName', 'score'] as const;
+export type LeaderboardSort = (typeof LEADERBOARD_SORTS)[number];
+export type LeaderboardTeam = Pick<
+  RankedTeam,
+  'teamId' | 'teamCode' | 'name' | 'projectName' | 'rank' | 'score' | 'rubricVersionNo'
+>;
+export interface JudgeLeaderboardResponse {
+  computedAt: string;
+  official: {
+    available: boolean;
+    unavailableReason: string | null;
+    rubricVersionNo: number | null;
+    teams: LeaderboardTeam[];
+  };
+  notRanked: (Pick<TeamResult, 'teamId' | 'teamCode' | 'name' | 'projectName'> & {
+    status: TeamResultStatus | 'version_conflict';
+  })[];
+  versionWarnings: string[];
+  totalTeams: number;
+}
+
 export interface DashboardResponse {
   computedAt: string;
   teams: { active: number; archived: number };

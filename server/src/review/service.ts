@@ -1,4 +1,4 @@
-import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
+import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import {
   REOPEN_REASON,
   REVIEW_ERRORS,
@@ -14,10 +14,11 @@ import {
   type JudgeProgressRow,
   type SubmissionSnapshot,
   type TeamCompletion,
+  type EvaluationInput,
 } from '@judging/shared';
 import { writeAudit } from '../audit.js';
 import { RuleError } from '../errors.js';
-import { loadEvaluation } from '../evaluations/service.js';
+import { checkInput, snapshotOf, loadEvaluation } from '../evaluations/service.js';
 import { loadVersion } from '../rubric/service.js';
 import { inTransaction, type Actor } from '../teams/service.js';
 
@@ -279,6 +280,11 @@ export async function getAdminEvaluation(db: Db, id: number): Promise<AdminEvalu
         }
       : null,
     canReopen: reopenBlockedReason == null,
+    lastAdminCorrection:
+      (await getEvaluationHistory(db, id))
+        .filter((e) => e.event === 'admin_corrected')
+        .map((e) => ({ at: e.createdAt, byEmail: e.actorEmail }))
+        .at(-1) ?? null,
     reopenBlockedReason,
   };
 }
@@ -305,6 +311,9 @@ export async function getEvaluationHistory(db: Db, id: number): Promise<Evaluati
     previousScore: r.previous_score == null ? null : Number(r.previous_score),
     reason: r.reason ?? null,
     snapshot: r.snapshot ? (JSON.parse(String(r.snapshot)) as SubmissionSnapshot) : null,
+    previousSnapshot: r.previous_snapshot
+      ? (JSON.parse(String(r.previous_snapshot)) as SubmissionSnapshot)
+      : null,
   }));
 }
 
@@ -317,6 +326,118 @@ export async function getEvaluationHistory(db: Db, id: number): Promise<Evaluati
  * status goes back to draft, the submitted snapshot stays in the history, and
  * the reason, administrator and time are recorded. Other evaluations are untouched.
  */
+export function correctSubmission(
+  pool: Pool,
+  actor: Actor,
+  id: number,
+  rowVersion: number,
+  input: EvaluationInput,
+  reason: string,
+) {
+  return inTransaction(pool, async (conn) => {
+    const [admins] = await conn.query<RowDataPacket[]>(
+      'SELECT role, status FROM users WHERE id = ? FOR UPDATE',
+      [actor.id],
+    );
+    if (admins[0]?.role !== 'admin' || admins[0]?.status !== 'active')
+      throw new RuleError(403, 'FORBIDDEN', 'Only active administrators can correct submissions.');
+    await conn.query('SELECT id FROM evaluations WHERE id = ? FOR UPDATE', [id]);
+    const before = await loadEvaluation(conn, id);
+    if (!before) throw notFound();
+    if (before.status !== 'submitted')
+      throw new RuleError(409, 'NOT_SUBMITTED', 'Only submitted evaluations can be corrected.');
+    if (before.rowVersion !== rowVersion)
+      throw new RuleError(
+        409,
+        'EVALUATION_CONFLICT',
+        'This evaluation changed. Close the editor and refresh before trying again.',
+      );
+    if (reason.trim().length < REOPEN_REASON.min || reason.trim().length > REOPEN_REASON.max)
+      throw new RuleError(
+        400,
+        'INVALID_REASON',
+        'An editing reason of 5 to 500 characters is required.',
+      );
+    const rubric = (await loadVersion(conn, before.rubricVersionId))!;
+    checkInput(rubric, input);
+    if (
+      input.ratings.length !== 8 ||
+      input.ratings.some((r) => r.rating == null) ||
+      input.sectionNotes.length !== 4
+    )
+      throw new RuleError(
+        400,
+        'EVALUATION_INVALID',
+        'All eight ratings and four section notes are required.',
+      );
+    const ratings = new Map(input.ratings.map((r) => [r.criterionId, r.rating]));
+    const total = scoreEvaluation(
+      rubric.sections,
+      rubric.sections.map((s) => s.criteria.map((c) => ratings.get(c.id) ?? null)),
+    ).total;
+    if (total == null)
+      throw new RuleError(
+        400,
+        'EVALUATION_INVALID',
+        'The original rubric requires eight complete ratings.',
+      );
+    const previous = snapshotOf(rubric, before, before.totalScore!);
+    const after = snapshotOf(rubric, { ...before, ...input }, total);
+    const [event] = await conn.query<ResultSetHeader>(
+      `INSERT INTO evaluation_events (evaluation_id,event,actor_id,actor_email,rubric_version_id,row_version,rated_count,total_score,previous_score,reason,snapshot,previous_snapshot) VALUES (?, 'admin_corrected', ?, ?, ?, ?, 8, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        actor.id,
+        actor.email,
+        before.rubricVersionId,
+        rowVersion + 1,
+        total,
+        before.totalScore,
+        reason.trim(),
+        JSON.stringify(after),
+        JSON.stringify(previous),
+      ],
+    );
+    try {
+      await conn.query('SET @admin_correction_event = ?', [event.insertId]);
+      for (const r of input.ratings)
+        await conn.query(
+          'UPDATE evaluation_scores SET score = ?, note = ? WHERE evaluation_id = ? AND criterion_id = ?',
+          [r.rating, r.note, id, r.criterionId],
+        );
+      for (const n of input.sectionNotes)
+        await conn.query(
+          `INSERT INTO evaluation_section_notes (evaluation_id,rubric_version_id,section_id,note) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE note=VALUES(note)`,
+          [id, before.rubricVersionId, n.sectionId, n.note],
+        );
+      await conn.query(
+        `UPDATE evaluations SET core_score=?,bonus_score=0,total_score=?,overall_notes=?,row_version=row_version+1,last_saved_at=NOW(),save_count=save_count+1 WHERE id=?`,
+        [total, total, input.overallNotes, id],
+      );
+      await writeAudit(conn, {
+        actorId: actor.id,
+        actorEmail: actor.email,
+        action: 'evaluation.admin_corrected',
+        entityType: 'evaluation',
+        entityId: id,
+        ipAddress: actor.ip,
+        details: {
+          reason: reason.trim(),
+          previousScore: before.totalScore,
+          totalScore: total,
+          eventId: event.insertId,
+          teamId: before.teamId,
+          judgeId: before.judgeId,
+          rubricVersionId: before.rubricVersionId,
+        },
+      });
+      return await getAdminEvaluation(conn, id);
+    } finally {
+      await conn.query('SET @admin_correction_event = NULL');
+    }
+  });
+}
+
 export function reopenEvaluation(pool: Pool, actor: Actor, id: number, rawReason: string) {
   const reason = rawReason.trim();
   if (reason.length < REOPEN_REASON.min || reason.length > REOPEN_REASON.max) {

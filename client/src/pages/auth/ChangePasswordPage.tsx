@@ -102,7 +102,7 @@ export function ChangePasswordPage() {
             {rules.map((rule) => (
               <li
                 key={rule.label}
-                className={`flex items-start gap-2 ${rule.ok ? 'text-emerald-700' : 'text-black/55'}`}
+                className={`flex items-start gap-2 ${rule.ok ? 'text-emerald-700' : 'text-muted'}`}
               >
                 <span aria-hidden className="mt-0.5 font-bold">
                   {rule.ok ? '✓' : '○'}

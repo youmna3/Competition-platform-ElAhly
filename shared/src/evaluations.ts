@@ -34,6 +34,7 @@ export interface EvaluationInput {
 }
 
 export interface EvaluationDetail extends EvaluationInput {
+  adminModifiedAt?: string | null;
   id: number;
   teamId: number;
   judgeId: number;

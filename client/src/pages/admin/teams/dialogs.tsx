@@ -278,7 +278,7 @@ export function AssignJudgesDialog({
             >
               <input
                 type="checkbox"
-                className="h-4 w-4 accent-ahly-red"
+                className="h-4 w-4 accent-ischool-blue"
                 checked={selected.has(u.id)}
                 onChange={() => toggle(u.id)}
               />
@@ -286,9 +286,9 @@ export function AssignJudgesDialog({
                 <span className="block font-medium">
                   {u.fullName} {u.role === 'admin' && <Badge tone="red">{ROLE_LABELS.admin}</Badge>}
                 </span>
-                <span className="block text-sm break-all text-black/55">{u.email}</span>
+                <span className="block text-sm break-all text-muted">{u.email}</span>
               </span>
-              <span className="text-xs whitespace-nowrap text-black/55">
+              <span className="text-xs whitespace-nowrap text-muted">
                 {u.assignedTeams} {u.assignedTeams === 1 ? 'team' : 'teams'}
               </span>
             </label>
@@ -315,7 +315,7 @@ export function AssignJudgesDialog({
 }
 
 export function ProgressBar({ submitted, total }: { submitted: number; total: number }) {
-  if (total === 0) return <span className="text-sm text-black/50">No judges yet</span>;
+  if (total === 0) return <span className="text-sm text-muted">No judges yet</span>;
   const pct = Math.round((submitted / total) * 100);
   return (
     <div className="min-w-[120px]">

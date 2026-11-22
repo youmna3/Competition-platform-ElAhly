@@ -8,7 +8,7 @@ import { Alert, Badge, Card, SelectField } from '../../../components/ui';
 import { EvaluationsHeader, formatDateTime } from './EvaluationsPage';
 
 function Completion({ row }: { row: JudgeProgressRow }) {
-  if (row.completionPercent == null) return <span className="text-sm text-black/45">No teams</span>;
+  if (row.completionPercent == null) return <span className="text-sm text-muted">No teams</span>;
   const pct = row.completionPercent;
   return (
     <div className="min-w-[110px]">
@@ -27,7 +27,7 @@ function Completion({ row }: { row: JudgeProgressRow }) {
         aria-valuemax={100}
       >
         <div
-          className={`h-full ${pct === 100 ? 'bg-emerald-600' : 'bg-ahly-red'}`}
+          className={`h-full ${pct === 100 ? 'bg-emerald-600' : 'bg-ischool-blue'}`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -95,7 +95,7 @@ export function JudgeProgressPage() {
           <option value="no_teams">No teams assigned</option>
         </SelectField>
       </Card>
-      <p className="text-sm text-black/55">
+      <p className="text-sm text-muted">
         Counts use current assignments to active teams. Evaluations of archived teams or teams a
         judge is no longer assigned to are kept, and counted under “Other”.
       </p>
@@ -114,7 +114,7 @@ export function JudgeProgressPage() {
         <>
           <Card className="hidden overflow-x-auto !p-0 md:block">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-black/5 text-xs tracking-wide text-black/50 uppercase">
+              <thead className="border-b border-black/5 text-xs tracking-wide text-muted uppercase">
                 <tr>
                   <th scope="col" className="px-5 py-3 font-semibold">
                     Judge
@@ -146,7 +146,7 @@ export function JudgeProgressPage() {
                 {rows.map((r) => (
                   <tr
                     key={r.judgeId}
-                    className={r.accountStatus === 'disabled' ? 'text-black/55' : ''}
+                    className={r.accountStatus === 'disabled' ? 'text-muted' : ''}
                   >
                     <td className="px-5 py-3">
                       <Name row={r} />
@@ -163,7 +163,7 @@ export function JudgeProgressPage() {
                     <td className="px-3 py-3 whitespace-nowrap text-black/65">
                       {formatDateTime(r.lastSubmittedAt)}
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums text-black/55">
+                    <td className="px-5 py-3 text-right tabular-nums text-muted">
                       {r.otherEvaluations}
                     </td>
                   </tr>
@@ -181,7 +181,7 @@ export function JudgeProgressPage() {
                     {r.notStarted} not started · {r.draft} draft · {r.submitted} submitted
                     {r.otherEvaluations > 0 && ` · ${r.otherEvaluations} other`}
                   </p>
-                  <p className="text-xs text-black/50">
+                  <p className="text-xs text-muted">
                     Last submission: {formatDateTime(r.lastSubmittedAt)}
                   </p>
                 </Card>

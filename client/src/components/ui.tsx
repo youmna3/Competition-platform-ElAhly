@@ -13,7 +13,7 @@ export function Alert({
 }) {
   const styles = {
     error: 'border-ahly-red/30 bg-red-50 text-ahly-red-dark',
-    info: 'border-ischool-blue/25 bg-blue-50 text-blue-900',
+    info: 'border-ischool-blue/25 bg-ischool-blue-soft text-ischool-blue-dark',
     success: 'border-emerald-600/25 bg-emerald-50 text-emerald-800',
     warning: 'border-ahly-gold/50 bg-ahly-gold-light/60 text-amber-900',
   }[tone];
@@ -37,15 +37,17 @@ export function Button({
 }) {
   const styles = {
     primary:
-      'bg-ahly-red text-white shadow-sm hover:bg-ahly-red-dark focus-visible:outline-ahly-red',
+      'bg-ischool-blue text-white shadow-sm hover:bg-ischool-blue-dark focus-visible:outline-ischool-blue',
     secondary:
-      'border border-black/15 bg-white text-ink hover:bg-black/5 focus-visible:outline-ischool-blue',
-    ghost: 'text-black/70 hover:bg-black/5 hover:text-ink focus-visible:outline-ischool-blue',
-    danger: 'bg-ahly-red-dark text-white shadow-sm hover:bg-red-900 focus-visible:outline-ahly-red',
+      'border border-line bg-white text-ischool-blue-dark hover:bg-ischool-blue-soft focus-visible:outline-ischool-blue',
+    ghost:
+      'text-muted hover:bg-ischool-blue-soft hover:text-ischool-blue-dark focus-visible:outline-ischool-blue',
+    danger:
+      'bg-ahly-red-dark text-white shadow-sm hover:bg-red-900 focus-visible:outline-ischool-blue',
   }[variant];
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${styles} ${className}`}
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${styles} ${className}`}
       {...props}
     />
   );
@@ -76,7 +78,7 @@ export function TextField({
         </p>
       ) : (
         hint && (
-          <p id={`${id}-hint`} className="text-xs text-black/55">
+          <p id={`${id}-hint`} className="text-xs text-muted">
             {hint}
           </p>
         )
@@ -120,11 +122,11 @@ export function PasswordField({
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <section
-      className={`rounded-2xl border border-black/5 bg-white p-5 shadow-sm sm:p-6 ${className}`}
+    <div
+      className={`min-w-0 rounded-2xl border border-line/80 bg-white p-5 shadow-card sm:p-6 ${className}`}
     >
       {children}
-    </section>
+    </div>
   );
 }
 
@@ -162,8 +164,8 @@ export function Badge({
     red: 'bg-red-50 text-ahly-red-dark ring-1 ring-inset ring-ahly-red/20',
     gold: 'bg-ahly-gold-light text-amber-900 ring-1 ring-inset ring-ahly-gold/40',
     green: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20',
-    blue: 'bg-blue-50 text-blue-800 ring-1 ring-inset ring-ischool-blue/20',
-    gray: 'bg-black/5 text-black/55 ring-1 ring-inset ring-black/10',
+    blue: 'bg-ischool-blue-soft text-ischool-blue-dark ring-1 ring-inset ring-ischool-blue/20',
+    gray: 'bg-black/5 text-muted ring-1 ring-inset ring-black/10',
   }[tone];
   return (
     <span

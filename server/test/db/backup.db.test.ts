@@ -7,7 +7,6 @@ import {
   backupDatabase,
   compareFingerprints,
   fingerprintDatabase,
-  restoreDatabase,
   verifyBackupChecksum,
   verifyDumpComplete,
 } from '../../src/db/backup.js';
@@ -21,9 +20,12 @@ import {
   freshTestDatabase,
   scalar,
   TEST_DB,
+  RESTORE_DB,
+  testMysql,
+  restoreTestDatabase,
 } from './helpers.js';
 
-const SCRATCH = `${TEST_DB}_restore`.slice(0, 64);
+const SCRATCH = RESTORE_DB;
 const dir = mkdtempSync(join(tmpdir(), 'judging-backups-'));
 let conn: Connection;
 
@@ -48,7 +50,7 @@ describe('backup and restore', () => {
     verifyDumpComplete(backup.file);
     await verifyBackupChecksum(backup.file);
 
-    await restoreDatabase(adminServer, backup.file, SCRATCH, { binDir: config.mysqlBinDir });
+    await restoreTestDatabase(backup.file, SCRATCH, { binDir: config.mysqlBinDir });
     const problems = compareFingerprints(
       await fingerprintDatabase(adminServer, TEST_DB),
       await fingerprintDatabase(adminServer, SCRATCH),
@@ -56,9 +58,7 @@ describe('backup and restore', () => {
     expect(problems).toEqual([]);
 
     // Triggers still protect the restored copy.
-    const restored = await (
-      await import('mysql2/promise')
-    ).default.createConnection({ ...adminServer, database: SCRATCH });
+    const restored = await testMysql.createConnection({ ...adminServer, database: SCRATCH });
     try {
       await expect(restored.query('DELETE FROM audit_log')).rejects.toThrow(/append-only/);
       expect(
@@ -74,7 +74,7 @@ describe('backup and restore', () => {
     appendFileSync(backup.file, '\nDROP TABLE users;\n');
     await expect(verifyBackupChecksum(backup.file)).rejects.toThrow(/does not match its checksum/);
     await expect(
-      restoreDatabase(adminServer, backup.file, SCRATCH, { binDir: config.mysqlBinDir }),
+      restoreTestDatabase(backup.file, SCRATCH, { binDir: config.mysqlBinDir }),
     ).rejects.toThrow(/checksum/);
     // The scratch copy from the previous test is still there and intact.
     const fp = await fingerprintDatabase(adminServer, SCRATCH);

@@ -77,7 +77,7 @@ export function ProgressBars({ title, rows }: { title: string; rows: ProgressRow
           <li key={r.key} className="grid grid-cols-[minmax(0,10rem)_1fr_auto] items-center gap-3">
             <span className="truncate text-sm" title={r.label}>
               {r.label}
-              {r.note && <span className="text-black/50"> {r.note}</span>}
+              {r.note && <span className="text-muted"> {r.note}</span>}
             </span>
             <div
               className="flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-black/5"

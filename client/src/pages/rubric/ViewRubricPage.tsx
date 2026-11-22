@@ -22,14 +22,14 @@ export function ViewRubricPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-ahly-red">Judging rubric</p>
+          <p className="eyebrow">Judging rubric</p>
           <h1 className="sr-only">Judging rubric</h1>
           <p className="text-sm text-black/60">Read-only. Every team is judged with this rubric.</p>
         </div>
         {user?.role === 'admin' && (
           <Link
             to="/admin/rubric"
-            className="text-sm font-semibold text-ischool-blue hover:underline"
+            className="text-sm font-semibold text-ischool-blue-dark hover:underline"
           >
             Manage the rubric →
           </Link>

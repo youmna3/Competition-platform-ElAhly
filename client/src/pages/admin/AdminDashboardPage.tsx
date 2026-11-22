@@ -16,10 +16,10 @@ import { FullPageSpinner } from '../../components/FullPageSpinner';
 
 function Stat({ label, value, note }: { label: string; value: string | number; note?: string }) {
   return (
-    <Card className="!p-5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-black/50">{label}</p>
+    <Card className="!border-t-2 !border-t-ischool-blue/40 !p-5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
       <p className="mt-2 text-3xl font-bold">{value}</p>
-      {note && <p className="mt-1 text-xs text-black/55">{note}</p>}
+      {note && <p className="mt-1 text-xs text-muted">{note}</p>}
     </Card>
   );
 }
@@ -39,7 +39,7 @@ function CompetitionFigures({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold">Competition progress</h2>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-black/50">Updated {formatTime(data.computedAt)}</span>
+          <span className="text-xs text-muted">Updated {formatTime(data.computedAt)}</span>
           <Button variant="secondary" onClick={onRefresh} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </Button>
@@ -138,7 +138,7 @@ function CompetitionFigures({
             <h3 className="text-sm font-semibold">Top teams</h3>
             <Link
               to="/admin/leaderboard"
-              className="text-sm font-semibold text-ischool-blue hover:underline"
+              className="text-sm font-semibold text-ischool-blue-dark hover:underline"
             >
               Full leaderboard →
             </Link>
@@ -153,7 +153,7 @@ function CompetitionFigures({
                   <span>
                     <span className="mr-2 font-bold tabular-nums">#{t.rank}</span>
                     <span className="font-semibold">{t.name}</span>
-                    <span className="ml-2 font-mono text-xs text-black/50">{t.teamCode}</span>
+                    <span className="ml-2 font-mono text-xs text-muted">{t.teamCode}</span>
                   </span>
                   <span className="text-lg font-bold tabular-nums">{formatScore(t.score)}</span>
                 </li>
@@ -212,12 +212,16 @@ export function AdminDashboardPage() {
     <div className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-ahly-red">Administrator</p>
+          <p className="eyebrow">Administrator</p>
           <h1 className="text-2xl font-bold sm:text-3xl">Welcome, {user?.fullName}</h1>
+          <p className="mt-2 max-w-2xl text-sm text-muted">
+            Your competition at a glance. Track judging, manage the rubric and review official
+            results.
+          </p>
         </div>
         <Link
           to="/admin/status"
-          className="text-sm font-semibold text-ischool-blue hover:underline"
+          className="text-sm font-semibold text-ischool-blue-dark hover:underline"
         >
           System status →
         </Link>
@@ -237,7 +241,7 @@ export function AdminDashboardPage() {
         <>
           <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-black/50">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Judging rubric
               </p>
               <p className="mt-1 text-lg font-semibold">
@@ -255,7 +259,7 @@ export function AdminDashboardPage() {
                     : 'Judges score against the published rubric. '}
                 <Link
                   to="/admin/rubric"
-                  className="font-semibold text-ischool-blue hover:underline"
+                  className="font-semibold text-ischool-blue-dark hover:underline"
                 >
                   Open Rubric Management
                 </Link>

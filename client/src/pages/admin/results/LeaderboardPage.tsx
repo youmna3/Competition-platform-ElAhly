@@ -81,7 +81,7 @@ function RankedTable({
         type="button"
         onClick={() => onSort(field)}
         aria-label={`Sort by ${label}`}
-        className="inline-flex items-center gap-1 font-semibold hover:text-ischool-blue"
+        className="inline-flex items-center gap-1 font-semibold hover:text-ischool-blue-dark"
       >
         {label}
         <span aria-hidden="true" className="text-black/35">
@@ -95,7 +95,7 @@ function RankedTable({
       <Card className="hidden overflow-x-auto !p-0 md:block">
         <table className="w-full text-left text-sm">
           <caption className="sr-only">{caption}</caption>
-          <thead className="border-b border-black/10 text-xs uppercase tracking-wide text-black/55">
+          <thead className="border-b border-black/10 text-xs uppercase tracking-wide text-muted">
             <tr>
               {SORTABLE.map((s) => header(s.field, s.label))}
               <th scope="col" className="px-4 py-3 text-right">
@@ -111,7 +111,7 @@ function RankedTable({
               <tr
                 key={t.teamId}
                 className={`border-b border-black/5 last:border-0 ${
-                  !provisional && t.rank <= 3 ? 'bg-ahly-gold-light/40' : ''
+                  !provisional && t.rank <= 3 ? 'bg-ischool-blue-soft/60' : ''
                 }`}
               >
                 <td className="px-4 py-3 text-lg font-bold tabular-nums">
@@ -141,7 +141,7 @@ function RankedTable({
                 <td className="px-4 py-3">
                   <div className="flex flex-col items-start gap-1">
                     <StatusBadge team={t} />
-                    <span className="text-xs text-black/50">Rubric v{t.rubricVersionNo}</span>
+                    <span className="text-xs text-muted">Rubric v{t.rubricVersionNo}</span>
                   </div>
                 </td>
               </tr>
@@ -152,10 +152,12 @@ function RankedTable({
       <ul className="space-y-3 md:hidden" aria-label={caption}>
         {teams.map((t) => (
           <li key={t.teamId}>
-            <Card className={`!p-4 ${!provisional && t.rank <= 3 ? 'ring-2 ring-ahly-gold' : ''}`}>
+            <Card
+              className={`!p-4 ${!provisional && t.rank <= 3 ? 'ring-2 ring-ischool-blue/30' : ''}`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs text-black/55">
+                  <p className="text-xs text-muted">
                     Rank <span className="text-base font-bold text-black">{t.rank}</span>
                     {isTied(t, teams) ? ' · tied' : ''} · {t.teamCode}
                   </p>
@@ -164,7 +166,7 @@ function RankedTable({
                 </div>
                 <div className="text-right">
                   <p className="text-2xl font-bold tabular-nums">{formatScore(t.score)}</p>
-                  <p className="text-xs text-black/50">
+                  <p className="text-xs text-muted">
                     {provisional ? 'provisional' : 'final'} / 100
                   </p>
                 </div>
@@ -194,7 +196,7 @@ function NotRankedList({ teams }: { teams: TeamResult[] }) {
           <Card className="h-full !p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-mono text-xs text-black/55">{t.teamCode}</p>
+                <p className="font-mono text-xs text-muted">{t.teamCode}</p>
                 <Link to={`/admin/teams/${t.teamId}`} className="font-semibold hover:underline">
                   {t.name}
                 </Link>
@@ -202,18 +204,18 @@ function NotRankedList({ teams }: { teams: TeamResult[] }) {
               </div>
               <div className="text-right">
                 <StatusBadge team={t} />
-                <p className="mt-1 text-xs text-black/55 tabular-nums">
+                <p className="mt-1 text-xs text-muted tabular-nums">
                   {t.submitted}/{t.assignedJudges} submitted
                 </p>
               </div>
             </div>
             <p className="mt-3 text-sm">
-              <span className="text-black/55">Provisional average (not official): </span>
+              <span className="text-muted">Provisional average (not official): </span>
               <span className="font-semibold tabular-nums">
                 {t.provisionalAverage == null ? '—' : formatScore(t.provisionalAverage)}
               </span>
               {t.versions.length > 0 && (
-                <span className="text-black/50">
+                <span className="text-muted">
                   {' '}
                   · rubric {t.versions.map((v) => `v${v}`).join(', ')}
                 </span>
@@ -275,7 +277,7 @@ export function LeaderboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-ahly-red">Administrators only · not public</p>
+          <p className="eyebrow">Detailed results · administrators only · not public</p>
           <h1 className="text-2xl font-bold sm:text-3xl">Leaderboard</h1>
           <p className="mt-1 max-w-2xl text-sm text-black/60">
             A team’s final score is the average of the submitted scores of every judge currently
@@ -285,7 +287,7 @@ export function LeaderboardPage() {
         </div>
         <div className="flex items-center gap-3">
           {data && (
-            <span className="text-xs text-black/50" aria-live="polite">
+            <span className="text-xs text-muted" aria-live="polite">
               Updated {formatTime(data.computedAt)}
             </span>
           )}
@@ -346,7 +348,10 @@ export function LeaderboardPage() {
           <p className="font-semibold">No active teams yet</p>
           <p className="mt-1 text-sm text-black/60">
             Add teams and assign judges on the{' '}
-            <Link to="/admin/teams" className="font-semibold text-ischool-blue hover:underline">
+            <Link
+              to="/admin/teams"
+              className="font-semibold text-ischool-blue-dark hover:underline"
+            >
               Teams
             </Link>{' '}
             page. Results appear here as judges submit.
@@ -365,7 +370,7 @@ export function LeaderboardPage() {
               ] as const
             ).map(([label, value]) => (
               <Card key={label} className="!p-3">
-                <dt className="text-xs text-black/55">{label}</dt>
+                <dt className="text-xs text-muted">{label}</dt>
                 <dd className="text-xl font-bold tabular-nums">{value}</dd>
               </Card>
             ))}
@@ -383,7 +388,7 @@ export function LeaderboardPage() {
                 Official ranking
               </h2>
               {data!.official.rubricVersionNo != null && (
-                <span className="text-sm text-black/55">
+                <span className="text-sm text-muted">
                   All scores on rubric v{data!.official.rubricVersionNo}
                 </span>
               )}

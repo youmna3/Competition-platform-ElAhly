@@ -1,3 +1,4 @@
+import { testMysql as mysql } from './helpers.js';
 /**
  * Phase 7: administrator review of evaluations, through the real API and a
  * real (scratch) MySQL database. Listing and filters, read-only review,
@@ -5,7 +6,7 @@
  * rubric versions, access rules, audit consistency and concurrency.
  */
 import bcrypt from 'bcryptjs';
-import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
+import { type Pool, type RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type {

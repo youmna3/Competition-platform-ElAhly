@@ -59,7 +59,10 @@ export function TeamDetailsPage() {
   if (query.isError) {
     return (
       <div className="space-y-4">
-        <Link to="/admin/teams" className="text-sm font-semibold text-ischool-blue hover:underline">
+        <Link
+          to="/admin/teams"
+          className="text-sm font-semibold text-ischool-blue-dark hover:underline"
+        >
           ← Teams
         </Link>
         <Alert tone="error" title="Could not load this team">
@@ -112,7 +115,10 @@ export function TeamDetailsPage() {
 
   return (
     <div className="space-y-6">
-      <Link to="/admin/teams" className="text-sm font-semibold text-ischool-blue hover:underline">
+      <Link
+        to="/admin/teams"
+        className="text-sm font-semibold text-ischool-blue-dark hover:underline"
+      >
         ← Teams
       </Link>
 
@@ -150,18 +156,18 @@ export function TeamDetailsPage() {
       <Card>
         <dl className="grid gap-4 text-sm sm:grid-cols-3">
           <div>
-            <dt className="text-xs font-semibold tracking-wide text-black/50 uppercase">Team ID</dt>
+            <dt className="text-xs font-semibold tracking-wide text-muted uppercase">Team ID</dt>
             <dd className="mt-1 font-medium">{team.teamCode}</dd>
           </div>
           <div>
-            <dt className="text-xs font-semibold tracking-wide text-black/50 uppercase">Created</dt>
+            <dt className="text-xs font-semibold tracking-wide text-muted uppercase">Created</dt>
             <dd className="mt-1 font-medium">{formatDate(team.createdAt)}</dd>
             {team.createdByEmail && (
-              <dd className="text-xs text-black/50">by {team.createdByEmail}</dd>
+              <dd className="text-xs text-muted">by {team.createdByEmail}</dd>
             )}
           </div>
           <div>
-            <dt className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+            <dt className="text-xs font-semibold tracking-wide text-muted uppercase">
               Evaluation progress
             </dt>
             <dd className="mt-1">
@@ -171,21 +177,21 @@ export function TeamDetailsPage() {
         </dl>
         <dl className="mt-4 grid gap-4 border-t border-black/5 pt-4 text-sm sm:grid-cols-3">
           <div>
-            <dt className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+            <dt className="text-xs font-semibold tracking-wide text-muted uppercase">
               Provisional average
             </dt>
             <dd className="mt-1 text-lg font-bold tabular-nums">
               {team.provisionalAverage != null ? formatScore(team.provisionalAverage) : '—'}
               {team.provisionalAverage != null && (
-                <span className="text-sm font-normal text-black/55"> / 100</span>
+                <span className="text-sm font-normal text-muted"> / 100</span>
               )}
             </dd>
-            <dd className="text-xs text-black/50">
+            <dd className="text-xs text-muted">
               Submitted scores of assigned judges. Not an official result.
             </dd>
           </div>
           <div>
-            <dt className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+            <dt className="text-xs font-semibold tracking-wide text-muted uppercase">
               Results readiness
             </dt>
             <dd className="mt-1">
@@ -203,7 +209,7 @@ export function TeamDetailsPage() {
             </dd>
           </div>
           <div>
-            <dt className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+            <dt className="text-xs font-semibold tracking-wide text-muted uppercase">
               Last update
             </dt>
             <dd className="mt-1 font-medium">{formatDate(team.lastUpdatedAt)}</dd>
@@ -222,7 +228,7 @@ export function TeamDetailsPage() {
       <section className="space-y-3" aria-labelledby="assigned-judges">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="assigned-judges" className="text-lg font-semibold">
-            Assigned judges <span className="text-black/50">({team.assignments.length})</span>
+            Assigned judges <span className="text-muted">({team.assignments.length})</span>
           </h2>
           <Button
             onClick={() => setDialog({ kind: 'assign' })}
@@ -255,7 +261,7 @@ export function TeamDetailsPage() {
                       )}
                     </p>
                     <p className="text-sm break-all text-black/60">{a.email}</p>
-                    <p className="text-xs text-black/50">
+                    <p className="text-xs text-muted">
                       Assigned {formatDate(a.assignedAt)}
                       {a.assignedByEmail ? ` by ${a.assignedByEmail}` : ''}
                     </p>
@@ -277,17 +283,17 @@ export function TeamDetailsPage() {
                           : ''}
                     </p>
                     {a.submittedAt && (
-                      <p className="text-xs text-black/50">{formatDate(a.submittedAt)}</p>
+                      <p className="text-xs text-muted">{formatDate(a.submittedAt)}</p>
                     )}
                     {a.rubricVersionNo != null && a.weights && (
-                      <p className="text-xs text-black/50">
+                      <p className="text-xs text-muted">
                         v{a.rubricVersionNo} · weights {a.weights.join('/')}%
                       </p>
                     )}
                     {a.evaluationId != null && (
                       <Link
                         to={`/admin/evaluations/${a.evaluationId}`}
-                        className="text-xs font-semibold text-ischool-blue hover:underline"
+                        className="text-xs font-semibold text-ischool-blue-dark hover:underline"
                         aria-label={`Review ${a.fullName}’s evaluation`}
                       >
                         Review →
@@ -338,7 +344,7 @@ export function TeamDetailsPage() {
                     </p>
                     <Link
                       to={`/admin/evaluations/${p.evaluationId}`}
-                      className="text-xs font-semibold text-ischool-blue hover:underline"
+                      className="text-xs font-semibold text-ischool-blue-dark hover:underline"
                       aria-label={`Review ${p.fullName}’s evaluation`}
                     >
                       Review →

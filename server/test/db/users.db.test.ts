@@ -1,8 +1,9 @@
+import { testMysql as mysql } from './helpers.js';
 /**
  * Phase 3 — user management against a real (scratch) MySQL database.
  */
 import bcrypt from 'bcryptjs';
-import mysql, { type Pool } from 'mysql2/promise';
+import { type Pool } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { passwordProblems } from '@judging/shared';

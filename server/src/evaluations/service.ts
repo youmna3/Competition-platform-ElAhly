@@ -73,7 +73,7 @@ async function publishedVersionId(db: Db): Promise<number | null> {
 
 export async function loadEvaluation(db: Db, id: number): Promise<EvaluationDetail | null> {
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT e.*, v.version_no FROM evaluations e
+    `SELECT e.*, v.version_no, (SELECT MAX(ev.created_at) FROM evaluation_events ev WHERE ev.evaluation_id=e.id AND ev.event='admin_corrected') AS admin_modified_at FROM evaluations e
      JOIN rubric_versions v ON v.id = e.rubric_version_id WHERE e.id = ?`,
     [id],
   );
@@ -98,6 +98,7 @@ export async function loadEvaluation(db: Db, id: number): Promise<EvaluationDeta
   );
   return {
     id: Number(e.id),
+    adminModifiedAt: iso(e.admin_modified_at),
     teamId: Number(e.team_id),
     judgeId: Number(e.judge_id),
     rubricVersionId: Number(e.rubric_version_id),
@@ -224,7 +225,7 @@ export async function recordEvent(conn: PoolConnection, e: EventInput) {
 }
 
 /** The immutable record of what was submitted: every rating and note, with the scores. */
-function snapshotOf(
+export function snapshotOf(
   rubric: RubricVersion,
   evaluation: EvaluationDetail,
   total: number,
@@ -259,7 +260,7 @@ const invalidInput = (message: string) =>
   new RuleError(400, EVALUATION_ERRORS.EVALUATION_INVALID, message);
 
 /** Checks a save against the evaluation's own rubric version. */
-function checkInput(rubric: RubricVersion, input: EvaluationInput) {
+export function checkInput(rubric: RubricVersion, input: EvaluationInput) {
   const criteria = new Map(
     rubric.sections.flatMap((s, i) =>
       s.criteria.map(
@@ -501,7 +502,7 @@ export function submitEvaluation(
     );
     const resubmission = current.reopenedCount > 0;
     const [previous] = await conn.query<RowDataPacket[]>(
-      `SELECT total_score FROM evaluation_events WHERE evaluation_id = ? AND event IN ('submitted', 'resubmitted')
+      `SELECT total_score FROM evaluation_events WHERE evaluation_id = ? AND event IN ('submitted', 'resubmitted', 'admin_corrected')
        ORDER BY id DESC LIMIT 1`,
       [id],
     );

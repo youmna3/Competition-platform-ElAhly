@@ -13,12 +13,14 @@ import {
   restoreDatabase,
 } from '../src/db/backup.js';
 import { adminServer, runScript } from './lib/cli.js';
+import { scratchDatabaseName, assertScratchTarget } from '../src/db/scratchName.js';
 
 runScript(async () => {
   const config = loadToolConfig();
   const server = adminServer(config);
   const live = config.db.database;
-  const scratch = `${live}_restore_check`.slice(0, 64);
+  const scratch = scratchDatabaseName(live, '_restore_check');
+  let owned = false;
 
   const backup = await backupDatabase(server, live, {
     dir: config.backupDir,
@@ -28,6 +30,18 @@ runScript(async () => {
   const before = await fingerprintDatabase(server, live);
 
   try {
+    assertScratchTarget(live, scratch, '_restore_check');
+    const claim = await mysql.createConnection({ ...server, connectTimeout: 5000 });
+    try {
+      // Refuse pre-existing databases; never adopt or delete someone else's scratch copy.
+      await claim.query(
+        `CREATE DATABASE \`${scratch}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+      );
+      owned = true;
+    } finally {
+      await claim.end();
+    }
+    assertScratchTarget(live, scratch, '_restore_check');
     await restoreDatabase(server, backup.file, scratch, { binDir: config.mysqlBinDir });
     console.log(`OK  restored into scratch database "${scratch}"`);
     const after = await fingerprintDatabase(server, scratch);
@@ -45,7 +59,10 @@ runScript(async () => {
     console.log('    Backups are restorable.');
     return 0;
   } finally {
-    const conn = await mysql.createConnection({ ...server, connectTimeout: 5_000 });
-    await conn.query(`DROP DATABASE IF EXISTS \`${scratch}\``).finally(() => conn.end());
+    assertScratchTarget(live, scratch, '_restore_check');
+    if (owned) {
+      const conn = await mysql.createConnection({ ...server, connectTimeout: 5_000 });
+      await conn.query(`DROP DATABASE IF EXISTS \`${scratch}\``).finally(() => conn.end());
+    }
   }
 });

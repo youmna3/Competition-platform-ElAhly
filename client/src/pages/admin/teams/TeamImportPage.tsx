@@ -107,11 +107,14 @@ export function TeamImportPage() {
 
   return (
     <div className="space-y-6">
-      <Link to="/admin/teams" className="text-sm font-semibold text-ischool-blue hover:underline">
+      <Link
+        to="/admin/teams"
+        className="text-sm font-semibold text-ischool-blue-dark hover:underline"
+      >
         ← Teams
       </Link>
       <div>
-        <p className="text-sm font-medium text-ahly-red">Administrator</p>
+        <p className="eyebrow">Administrator</p>
         <h1 className="text-2xl font-bold sm:text-3xl">Import teams</h1>
         <p className="mt-1 max-w-2xl text-sm text-black/60">
           Add many teams at once from Excel (.xlsx) or CSV. You see a preview first. Nothing is
@@ -127,18 +130,10 @@ export function TeamImportPage() {
           exists updates that team, but only after you confirm. Other columns are ignored.
         </p>
         <div className="flex flex-wrap gap-2">
-          <a
-            href="/templates/teams-import-template.xlsx"
-            download
-            className="inline-flex items-center rounded-full border border-black/15 bg-white px-4 py-2 text-sm font-semibold hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-ischool-blue"
-          >
+          <a href="/templates/teams-import-template.xlsx" download className="secondary-link">
             Excel template (.xlsx)
           </a>
-          <a
-            href="/templates/teams-import-template.csv"
-            download
-            className="inline-flex items-center rounded-full border border-black/15 bg-white px-4 py-2 text-sm font-semibold hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-ischool-blue"
-          >
+          <a href="/templates/teams-import-template.csv" download className="secondary-link">
             CSV template
           </a>
         </div>
@@ -203,7 +198,7 @@ export function TeamImportPage() {
 
           <div className="max-h-[28rem] overflow-auto rounded-xl border border-black/10">
             <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 bg-surface text-xs tracking-wide text-black/50 uppercase">
+              <thead className="sticky top-0 bg-surface text-xs tracking-wide text-muted uppercase">
                 <tr>
                   <th scope="col" className="px-3 py-2">
                     Row
@@ -227,11 +222,11 @@ export function TeamImportPage() {
                   const input = rowInput(r.rowNumber);
                   return (
                     <tr key={r.rowNumber} className={r.action === 'error' ? 'bg-red-50/60' : ''}>
-                      <td className="px-3 py-2 text-black/50">{r.rowNumber}</td>
+                      <td className="px-3 py-2 text-muted">{r.rowNumber}</td>
                       <td className="px-3 py-2 font-medium">{r.teamCode || '—'}</td>
                       <td className="px-3 py-2">
                         <span className="block">{input?.name || '—'}</span>
-                        <span className="block text-xs text-black/55">{input?.projectName}</span>
+                        <span className="block text-xs text-muted">{input?.projectName}</span>
                       </td>
                       <td className="px-3 py-2">
                         <Badge tone={ACTION_BADGES[r.action].tone}>
@@ -267,7 +262,7 @@ export function TeamImportPage() {
             <label className="flex items-start gap-3 rounded-xl bg-blue-50 p-4 text-sm">
               <input
                 type="checkbox"
-                className="mt-0.5 h-4 w-4 accent-ahly-red"
+                className="mt-0.5 h-4 w-4 accent-ischool-blue"
                 checked={confirmUpdates}
                 onChange={(e) => setConfirmUpdates(e.target.checked)}
               />
@@ -312,10 +307,7 @@ export function TeamImportPage() {
               <strong>{stage.result.unchanged}</strong> unchanged
             </li>
           </ul>
-          <Link
-            to="/admin/teams"
-            className="inline-flex rounded-full bg-ahly-red px-5 py-2.5 text-sm font-semibold text-white hover:bg-ahly-red-dark"
-          >
+          <Link to="/admin/teams" className="action-link">
             Go to Teams
           </Link>
         </Card>

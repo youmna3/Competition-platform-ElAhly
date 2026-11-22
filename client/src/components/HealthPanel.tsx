@@ -61,7 +61,7 @@ function StatusTile({
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <p className="flex justify-between gap-4">
-      <span className="text-black/50">{label}</span>
+      <span className="text-muted">{label}</span>
       <span className="truncate text-right font-medium text-ink">{value}</span>
     </p>
   );
@@ -124,7 +124,7 @@ export function HealthPanel({ refreshMs = 10_000 }: { refreshMs?: number }) {
         </StatusTile>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-black/55">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
         <span aria-live="polite">
           {checkedAt
             ? `Last checked ${new Date(checkedAt).toLocaleTimeString()} · refreshes every ${refreshMs / 1000} s`
@@ -134,7 +134,7 @@ export function HealthPanel({ refreshMs = 10_000 }: { refreshMs?: number }) {
           type="button"
           onClick={() => void query.refetch()}
           disabled={query.isFetching}
-          className="rounded-full bg-ahly-red px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-ahly-red-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ahly-red disabled:opacity-60"
+          className="action-link disabled:opacity-60"
         >
           {query.isFetching ? 'Checking…' : 'Check again'}
         </button>

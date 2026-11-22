@@ -1,9 +1,10 @@
+import { testMysql as mysql } from './helpers.js';
 /**
  * Authentication and authorization against a real (scratch) MySQL database:
  * login, invalid credentials, lockout, rate limiting, forced password change,
  * session expiry, logout, disabled accounts, role checks, CSRF and recovery.
  */
-import mysql, { type Pool } from 'mysql2/promise';
+import { type Pool } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
@@ -433,7 +434,7 @@ describe('authorization', () => {
     const judgeId = await scalar<number>(pool, 'SELECT id FROM users WHERE email = ?', [
       JUDGE_EMAIL,
     ]);
-    const otherJudge = await createUser(pool as unknown as mysql.Connection, {
+    const otherJudge = await createUser(pool as unknown as import('mysql2/promise').Connection, {
       email: 'other@example.com',
     });
     await pool.query(

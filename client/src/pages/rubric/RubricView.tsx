@@ -9,7 +9,7 @@ import {
 import { StarRating } from '../../components/StarRating';
 import { Badge, Card } from '../../components/ui';
 
-const SEGMENT_COLORS = ['bg-ahly-red', 'bg-ahly-gold', 'bg-ischool-blue', 'bg-ink'];
+const SEGMENT_COLORS = ['bg-ischool-blue', 'bg-ischool-blue-dark', 'bg-ahly-gold', 'bg-ink'];
 
 /**
  * Read-only rubric, exactly as judges see it. With `practice`, the stars can be
@@ -42,7 +42,7 @@ export function RubricView({
     <div className="space-y-5">
       <div>
         <h2 className="text-2xl font-bold sm:text-3xl">{rubric.title || 'Untitled rubric'}</h2>
-        {meta && <p className="mt-1 text-sm text-black/55">{meta}</p>}
+        {meta && <p className="mt-1 text-sm text-muted">{meta}</p>}
         {rubric.description && (
           <p className="mt-2 max-w-3xl whitespace-pre-wrap text-black/70">{rubric.description}</p>
         )}
@@ -50,7 +50,7 @@ export function RubricView({
 
       <Card className="space-y-4">
         <div>
-          <p className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+          <p className="text-xs font-semibold tracking-wide text-muted uppercase">
             How scoring works
           </p>
           <p className="mt-1 text-sm text-black/70">
@@ -114,7 +114,7 @@ export function RubricView({
           <Card key={i} className="!p-0">
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-black/5 px-5 py-4 sm:px-6">
               <div className="min-w-0">
-                <p className="text-xs font-semibold tracking-wide text-black/45 uppercase">
+                <p className="text-xs font-semibold tracking-wide text-muted uppercase">
                   Section {i + 1}
                 </p>
                 <h3 className="text-lg font-bold">{s.title || 'Untitled section'}</h3>
@@ -174,16 +174,16 @@ export function RubricView({
       })}
 
       {practice && (
-        <Card className="flex flex-wrap items-center justify-between gap-3 border-ahly-red/20">
+        <Card className="flex flex-wrap items-center justify-between gap-3 border-ischool-blue/20">
           <div>
             <p className="font-semibold">Practice score</p>
-            <p className="text-xs text-black/55">
+            <p className="text-xs text-muted">
               Click the stars to try the scoring. Nothing is saved.
             </p>
           </div>
           <p className="text-2xl font-bold text-ahly-red" aria-live="polite">
             {breakdown.total != null ? formatPoints(breakdown.total) : '—'}{' '}
-            <span className="text-base text-black/55">/ 100</span>
+            <span className="text-base text-muted">/ 100</span>
           </p>
         </Card>
       )}

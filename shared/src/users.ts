@@ -51,6 +51,7 @@ export interface TemporaryPasswordResponse {
 }
 
 export const USER_ERRORS = {
+  USER_CONFLICT: 'USER_CONFLICT',
   EMAIL_TAKEN: 'EMAIL_TAKEN',
   LAST_ADMIN: 'LAST_ADMIN',
   CANNOT_DISABLE_SELF: 'CANNOT_DISABLE_SELF',

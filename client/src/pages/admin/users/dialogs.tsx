@@ -213,11 +213,11 @@ export function TemporaryPasswordDialog({
     >
       <dl className="space-y-3 rounded-2xl bg-surface p-4">
         <div>
-          <dt className="text-xs font-semibold uppercase tracking-wide text-black/50">E-mail</dt>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-muted">E-mail</dt>
           <dd className="font-medium break-all">{user.email}</dd>
         </div>
         <div>
-          <dt className="text-xs font-semibold uppercase tracking-wide text-black/50">
+          <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
             Temporary password
           </dt>
           <dd className="mt-1 flex flex-wrap items-center gap-3">
@@ -236,7 +236,7 @@ export function TemporaryPasswordDialog({
       <label className="flex items-start gap-3 text-sm">
         <input
           type="checkbox"
-          className="mt-0.5 h-4 w-4 accent-ahly-red"
+          className="mt-0.5 h-4 w-4 accent-ischool-blue"
           checked={saved}
           onChange={(e) => setSaved(e.target.checked)}
         />

@@ -1,9 +1,10 @@
+import { testMysql as mysql } from './helpers.js';
 /**
  * Phase 4: teams, judge assignments and team import, tested against a real
  * (scratch) MySQL database through the real Express app.
  */
 import bcrypt from 'bcryptjs';
-import mysql, { type Connection, type Pool } from 'mysql2/promise';
+import { type Connection, type Pool } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {

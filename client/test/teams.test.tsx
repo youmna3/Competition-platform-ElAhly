@@ -298,6 +298,59 @@ describe('Team import', () => {
 });
 
 describe('Judge "My teams"', () => {
+  it('shows progress, clear actions and filters submitted teams from pending work', async () => {
+    const assignments: JudgeAssignment[] = ['not_started', 'draft', 'submitted'].map(
+      (status, i) => ({
+        teamId: i + 1,
+        teamCode: `AHL-${i + 1}`,
+        teamName: `Assigned team ${i + 1}`,
+        projectName: `Project ${i + 1}`,
+        evaluationStatus: status as JudgeAssignment['evaluationStatus'],
+        assignedAt: '2026-11-22T10:00:00.000Z',
+        ratedCount: i * 4,
+        requiredCount: 8,
+        totalScore: i === 2 ? 85 : null,
+        submittedAt: null,
+        rubricVersionNo: 1,
+        outdatedVersion: false,
+        reopenNotice: false,
+        reopenReason: null,
+      }),
+    );
+    mockApi(judgeUser, (c) =>
+      c.url === '/api/judge/assignments'
+        ? { status: 200, body: { assignments } }
+        : c.url === '/api/judge/rubric'
+          ? { status: 200, body: { rubric: { versionNo: 1 } } }
+          : undefined,
+    );
+    renderAt('/judge');
+    expect(
+      await screen.findByRole('link', { name: 'Start evaluation of Assigned team 1' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Continue evaluation of Assigned team 2' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'View evaluation of Assigned team 3' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Evaluations submitted' })).toHaveAttribute(
+      'aria-valuenow',
+      '33',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Needs evaluation (2)' }));
+    expect(screen.queryByText('Assigned team 3')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Needs evaluation (2)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Submitted (1)' }));
+    expect(
+      screen.getByRole('link', { name: 'View evaluation of Assigned team 3' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Assigned team 1')).not.toBeInTheDocument();
+  });
+
   it('lists assigned teams and says judging waits for the rubric to be published', async () => {
     const assignments: JudgeAssignment[] = [
       {

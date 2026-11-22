@@ -1,8 +1,9 @@
 import { Router, type Response } from 'express';
 import type { Pool } from 'mysql2/promise';
 import { z } from 'zod';
-import { RESULTS_SORTS } from '@judging/shared';
-import { getDashboard, getResults } from './service.js';
+import { LEADERBOARD_SORTS, RESULTS_SORTS } from '@judging/shared';
+import { requireAuth, requireRole } from '../auth/middleware.js';
+import { getDashboard, getJudgeLeaderboard, getResults } from './service.js';
 
 const resultsSchema = z
   .object({
@@ -41,5 +42,20 @@ export function resultsRouter(pool: Pool): Router {
     res.json(await getDashboard(pool));
   });
 
+  return router;
+}
+
+/** Authenticated judges and admins; no mutation or detail endpoints. */
+export function judgeLeaderboardRouter(pool: Pool): Router {
+  const router = Router();
+  router.use(requireAuth, requireRole('admin', 'judge'));
+  router.get('/leaderboard', async (req, res) => {
+    const parsed = resultsSchema
+      .extend({ sort: z.enum(LEADERBOARD_SORTS).default('rank') })
+      .safeParse(req.query);
+    if (!parsed.success) return invalid(res, parsed.error);
+    res.set('Cache-Control', 'no-store');
+    res.json(await getJudgeLeaderboard(pool, parsed.data));
+  });
   return router;
 }

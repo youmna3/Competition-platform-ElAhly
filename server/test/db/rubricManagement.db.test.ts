@@ -1,10 +1,11 @@
+import { testMysql as mysql } from './helpers.js';
 /**
  * Phase 5: Rubric Management through the real API and a real (scratch) MySQL
  * database. Drafts, editing, validation, publishing, versions, history,
  * access control, administrators as judges, audit and concurrency.
  */
 import bcrypt from 'bcryptjs';
-import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
+import { type Pool, type RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { RubricContent, RubricVersion } from '@judging/shared';

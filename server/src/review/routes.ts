@@ -1,14 +1,16 @@
 import { Router, type Request, type Response } from 'express';
-import type { Pool } from 'mysql2/promise';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { z } from 'zod';
 import { REOPEN_REASON } from '@judging/shared';
 import type { Actor } from '../teams/service.js';
+import { saveSchema } from '../evaluations/routes.js';
 import {
   getAdminEvaluation,
   getEvaluationHistory,
   judgeProgress,
   listTeamEvaluations,
   reopenEvaluation,
+  correctSubmission,
 } from './service.js';
 
 const id = z.coerce.number().int().positive().max(4_294_967_295);
@@ -62,6 +64,19 @@ const actorOf = (req: Request): Actor => ({ id: req.user!.id, email: req.user!.e
 /** Mounted inside the admin router: administrators only. */
 export function reviewRouter(pool: Pool): Router {
   const router = Router();
+  router.put('/evaluations/:id/submission', async (req, res) => {
+    const evaluationId = id.safeParse(req.params.id);
+    if (!evaluationId.success) return invalid(res, evaluationId.error);
+    const parsed = saveSchema
+      .extend({ reason: z.string().trim().min(5).max(500), confirmed: z.literal(true) })
+      .safeParse(req.body);
+    if (!parsed.success) return invalid(res, parsed.error);
+    const { rowVersion, reason, ratings, sectionNotes, overallNotes } = parsed.data;
+    const input = { ratings, sectionNotes, overallNotes };
+    res.json(
+      await correctSubmission(pool, actorOf(req), evaluationId.data, rowVersion, input, reason),
+    );
+  });
 
   router.get('/evaluations', async (req, res) => {
     const parsed = listSchema.safeParse(req.query);
@@ -69,6 +84,22 @@ export function reviewRouter(pool: Pool): Router {
     res.json(
       await listTeamEvaluations(pool, { ...parsed.data, search: parsed.data.search || undefined }),
     );
+  });
+
+  router.get('/evaluations/historical', async (req, res) => {
+    const parsed = z
+      .object({ search: z.string().trim().max(100).default('') })
+      .strict()
+      .safeParse(req.query);
+    if (!parsed.success) return invalid(res, parsed.error);
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT e.id, t.team_code AS teamCode, t.name AS teamName, u.full_name AS judgeName
+      FROM evaluations e JOIN teams t ON t.id=e.team_id JOIN users u ON u.id=e.judge_id
+      WHERE e.status='submitted' AND (t.status='archived' OR NOT EXISTS (SELECT 1 FROM team_judges tj WHERE tj.team_id=e.team_id AND tj.judge_id=e.judge_id))
+      AND (?='' OR LOCATE(LOWER(?),LOWER(CONCAT(t.team_code,' ',t.name,' ',u.full_name)))>0) ORDER BY e.id DESC LIMIT 200`,
+      [parsed.data.search, parsed.data.search],
+    );
+    res.json({ evaluations: rows });
   });
 
   router.get('/evaluations/:id', async (req, res) => {

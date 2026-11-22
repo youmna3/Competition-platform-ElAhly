@@ -57,7 +57,7 @@ function Field({
         </p>
       ) : (
         hint && (
-          <p id={`${id}-h`} className="text-xs text-black/55">
+          <p id={`${id}-h`} className="text-xs text-muted">
             {hint}
           </p>
         )
@@ -117,7 +117,7 @@ function WeightControl({
         aria-label={`${name} weight`}
         aria-valuetext={section.weightPercent ? `${section.weightPercent}%` : 'not set'}
         onChange={(e) => onChange(e.target.value === '0' ? '' : e.target.value)}
-        className="w-full accent-ahly-red"
+        className="w-full accent-ischool-blue"
       />
       {error && (
         <p id={`${id}-e`} className="text-xs font-medium text-ahly-red-dark">
@@ -161,7 +161,7 @@ export function RubricEditor({
       <Card className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">1. Rubric details</h2>
-          <p className="text-sm text-black/55">Judges see these at the top of the rubric.</p>
+          <p className="text-sm text-muted">Judges see these at the top of the rubric.</p>
         </div>
         <Field
           label="Rubric title"
@@ -198,7 +198,7 @@ export function RubricEditor({
       <Card className="space-y-5">
         <div>
           <h2 className="text-lg font-semibold">2. Section weights</h2>
-          <p className="text-sm text-black/55">
+          <p className="text-sm text-muted">
             How much each section counts toward the final score out of 100. The two criteria in a
             section count equally.
           </p>
@@ -235,7 +235,7 @@ export function RubricEditor({
       <div className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">3. Sections and criteria</h2>
-          <p className="text-sm text-black/55">
+          <p className="text-sm text-muted">
             The rubric always has 4 sections with 2 criteria each. Judges rate every criterion from
             1 to 5 stars.
           </p>
@@ -251,7 +251,7 @@ export function RubricEditor({
                 Section {i + 1}
                 {s.title.trim() && <span className="font-normal text-black/60"> · {s.title}</span>}
               </p>
-              <span className="rounded-full bg-ahly-red/10 px-3 py-0.5 text-sm font-semibold text-ahly-red-dark">
+              <span className="rounded-full bg-ischool-blue-soft px-3 py-0.5 text-sm font-semibold text-ischool-blue-dark">
                 {s.weightPercent ? `${s.weightPercent}% of the score` : 'Weight not set'}
               </span>
             </div>

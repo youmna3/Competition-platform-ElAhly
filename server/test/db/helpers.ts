@@ -1,15 +1,24 @@
 /**
  * Helpers for the real-database tests. Every test file gets a freshly migrated
- * scratch database (<DB_NAME>_test). The real database is never touched.
+ * guarded, hashed scratch database. The real database is never mutated.
  */
 import mysql, { type Connection, type ResultSetHeader, type RowDataPacket } from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
 import { expect } from 'vitest';
 import { loadToolConfig } from '../../src/config.js';
+import { assertTestDatabase, testDatabaseNames } from '../databaseSafety.js';
+import { restoreDatabase } from '../../src/db/backup.js';
 import { migrate, type DbTarget } from '../../src/db/migrate.js';
 
 export const config = loadToolConfig();
-export const TEST_DB = `${config.db.database}_test`.slice(0, 64);
+const names = testDatabaseNames(config.db.database);
+export const TEST_DB = names.test;
+export const RESTORE_DB = names.restore;
+const owned = new Set<string>();
+export function guardTestName(name: string) {
+  assertTestDatabase(name, config.db.database, config.env);
+}
+guardTestName(TEST_DB);
 
 export const adminServer = {
   host: config.db.host,
@@ -20,32 +29,127 @@ export const adminServer = {
 
 export const testTarget: DbTarget = { ...adminServer, database: TEST_DB };
 
-export async function dropDatabase(name: string) {
+/** Every query on a test connection is checked on that SAME physical connection. */
+function guardedConnection<T extends Connection>(conn: T): T {
+  return new Proxy(conn, {
+    get(target, property) {
+      if (property === 'query' || property === 'execute')
+        return async (...args: unknown[]) => {
+          const [[row]] = await target.query<RowDataPacket[]>('SELECT DATABASE() AS name');
+          const name = String(row?.name ?? '');
+          guardTestName(name);
+          if (!owned.has(name)) throw new Error('Test database is not owned by this test process');
+          const sql =
+            typeof args[0] === 'string'
+              ? args[0]
+              : String((args[0] as { sql?: string })?.sql ?? '');
+          if (/\b(?:USE|(?:DROP|CREATE)\s+(?:DATABASE|SCHEMA))\b/i.test(sql))
+            throw new Error('Database switching/destruction must use guarded helpers');
+          if (
+            /^\s*(?:DELETE|UPDATE|INSERT|REPLACE|ALTER|DROP|CREATE|TRUNCATE|RENAME|GRANT|REVOKE)\b/i.test(
+              sql,
+            )
+          ) {
+            const targets = [
+              ...sql.matchAll(
+                /\b(?:FROM|INTO|UPDATE|TABLE|TRIGGER)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?`?([A-Za-z0-9_]+)`?\s*\./gi,
+              ),
+              ...sql.matchAll(
+                /\b(?:BEFORE|AFTER)\s+(?:UPDATE|INSERT|DELETE)\s+ON\s+`?([A-Za-z0-9_]+)`?\s*\./gi,
+              ),
+              ...(/^\s*(?:GRANT|REVOKE)\b/i.test(sql)
+                ? sql.matchAll(/\bON\s+`?([A-Za-z0-9_]+)`?\s*\./gi)
+                : []),
+            ];
+            for (const match of targets) {
+              guardTestName(match[1]!);
+              if (match[1]!.toLowerCase() !== name.toLowerCase())
+                throw new Error('Cross-database test mutation refused');
+            }
+          }
+          return Reflect.apply(target[property], target, args);
+        };
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+async function claim(name: string) {
+  guardTestName(name);
+  if (owned.has(name)) return;
   const conn = await mysql.createConnection(adminServer);
   try {
-    await conn.query(`DROP DATABASE IF EXISTS \`${name}\``);
+    // CREATE without IF NOT EXISTS atomically claims a new database. An existing
+    // name is refused, even when it happens to look like one of our test names.
+    guardTestName(name);
+    await conn.query(
+      `CREATE DATABASE \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    );
+    owned.add(name);
   } finally {
     await conn.end();
   }
 }
-
-/** Drops and recreates the scratch database, then applies all migrations. */
-export async function freshTestDatabase(): Promise<DbTarget> {
+export const testMysql = {
+  createPool(options: Parameters<typeof mysql.createPool>[0]) {
+    if (typeof options === 'string') throw new Error('Explicit test database options required');
+    guardTestName(String(options.database));
+    const pool = mysql.createPool(options);
+    return new Proxy(pool, {
+      get(target, property) {
+        if (property === 'getConnection')
+          return async () => guardedConnection(await target.getConnection());
+        if (property === 'query' || property === 'execute')
+          return async (...args: unknown[]) => {
+            const conn = guardedConnection(await target.getConnection());
+            try {
+              return await Reflect.apply(conn[property], conn, args);
+            } finally {
+              conn.release();
+            }
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  },
+  async createConnection(options: Parameters<typeof mysql.createConnection>[0]) {
+    if (typeof options === 'string') throw new Error('Explicit test database options required');
+    guardTestName(String(options.database));
+    return guardedConnection(await mysql.createConnection(options));
+  },
+};
+export async function dropDatabase(name: string) {
+  guardTestName(name);
+  if (!owned.has(name)) return; // Never remove another process's database.
   const conn = await mysql.createConnection(adminServer);
   try {
-    await conn.query(`DROP DATABASE IF EXISTS \`${TEST_DB}\``);
-    await conn.query(
-      `CREATE DATABASE \`${TEST_DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-    );
+    guardTestName(name);
+    await conn.query(`DROP DATABASE IF EXISTS \`${name}\``);
+    owned.delete(name);
   } finally {
     await conn.end();
   }
+}
+export async function freshTestDatabase(): Promise<DbTarget> {
+  await claim(TEST_DB);
+  await dropDatabase(TEST_DB);
+  await claim(TEST_DB);
+  guardTestName(TEST_DB);
   await migrate(testTarget);
   return testTarget;
 }
-
 export function connectTest(): Promise<Connection> {
-  return mysql.createConnection({ ...testTarget, charset: 'utf8mb4_unicode_ci' });
+  return testMysql.createConnection({ ...testTarget, charset: 'utf8mb4_unicode_ci' });
+}
+export async function restoreTestDatabase(
+  file: string,
+  name: string,
+  options: { binDir?: string },
+) {
+  await claim(name);
+  guardTestName(name);
+  await restoreDatabase(adminServer, file, name, options);
 }
 
 /** Asserts that a statement is refused, with a message or error code matching `pattern`. */
@@ -148,7 +252,7 @@ export async function addCriterion(
 }
 
 /**
- * A draft in the competition's fixed shape (4 sections × 2 criteria, 1-5 stars,
+ * A draft in the competition's fixed shape (4 sections Ã— 2 criteria, 1-5 stars,
  * criterion weight = section % / 10), ready to publish when the weights total 100.
  */
 export async function createPublishableDraft(

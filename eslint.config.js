@@ -4,11 +4,11 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', 'backups/**'] },
+  { ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', 'backups/**', 'artifacts/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['server/**/*.ts', 'shared/**/*.ts'],
+    files: ['server/**/*.ts', 'shared/**/*.ts', 'scripts/**/*.mjs'],
     languageOptions: { globals: globals.node },
   },
   {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import {
   EVALUATION_PROGRESS_LABELS,
   REOPEN_REASON,
@@ -17,9 +17,11 @@ import { useToast } from '../../../components/Toast';
 import { Alert, Badge, Button, Card } from '../../../components/ui';
 import { inputOf } from '../../judge/useEvaluationAutosave';
 import { Info, RubricIntro, ScoringForm } from '../../judge/EvaluationPage';
+import { EditSubmission, SubmissionComparison } from './EditSubmission';
 import { PROGRESS_TONES, formatDateTime } from './EvaluationsPage';
 
 const EVENT_STYLE: Record<EvaluationEvent['event'], { label: string; dot: string }> = {
+  admin_corrected: { label: 'Corrected by an administrator', dot: 'bg-ischool-blue' },
   started: { label: 'Evaluation started', dot: 'bg-black/30' },
   draft_saved: { label: 'Draft saved', dot: 'bg-ischool-blue' },
   submitted: { label: 'Submitted', dot: 'bg-emerald-600' },
@@ -37,7 +39,7 @@ function HistoryItem({ e }: { e: EvaluationEvent }) {
         aria-hidden
       />
       <p className="font-semibold">{style.label}</p>
-      <p className="text-xs text-black/55">
+      <p className="text-xs text-muted">
         {formatDateTime(e.createdAt)} · {e.actorName ?? e.actorEmail ?? 'Unknown'}
         {e.actorName && e.actorEmail ? ` (${e.actorEmail})` : ''} · rubric v{e.rubricVersionNo}
       </p>
@@ -58,6 +60,22 @@ function HistoryItem({ e }: { e: EvaluationEvent }) {
             )}
           </p>
         )}
+        {e.event === 'admin_corrected' && (
+          <>
+            <p>Reason: {e.reason}</p>
+            <p>
+              Score {formatScore(e.previousScore ?? 0)} ? {formatScore(e.totalScore ?? 0)}
+            </p>
+            {e.previousSnapshot && e.snapshot && (
+              <details>
+                <summary className="cursor-pointer text-ischool-blue-dark">
+                  Show before and after correction
+                </summary>
+                <SubmissionComparison before={e.previousSnapshot} after={e.snapshot} />
+              </details>
+            )}
+          </>
+        )}
         {e.event === 'reopened' && (
           <>
             <p>
@@ -74,7 +92,7 @@ function HistoryItem({ e }: { e: EvaluationEvent }) {
           <>
             <button
               type="button"
-              className="text-sm font-semibold text-ischool-blue hover:underline"
+              className="text-sm font-semibold text-ischool-blue-dark hover:underline"
               aria-expanded={open}
               onClick={() => setOpen((v) => !v)}
             >
@@ -125,7 +143,7 @@ function HistoryItem({ e }: { e: EvaluationEvent }) {
                     )}
                   </div>
                 ) : (
-                  <p className="text-xs text-black/45">No notes.</p>
+                  <p className="text-xs text-muted">No notes.</p>
                 )}
               </div>
             )}
@@ -212,7 +230,7 @@ function ReopenDialog({
           aria-describedby="reopen-reason-hint"
           className="block w-full rounded-xl border border-black/15 px-3.5 py-2.5 text-base shadow-sm outline-none focus:border-ischool-blue focus:ring-4 focus:ring-ischool-blue/15 sm:text-sm"
         />
-        <p id="reopen-reason-hint" className="text-xs text-black/55">
+        <p id="reopen-reason-hint" className="text-xs text-muted">
           At least {REOPEN_REASON.min} characters. {trimmed.length}/{REOPEN_REASON.max}
         </p>
       </div>
@@ -234,6 +252,18 @@ export function EvaluationReviewPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [reopening, setReopening] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const editing = params.get('edit') === '1';
+  const setEditing = (open: boolean) =>
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (open) next.set('edit', '1');
+        else next.delete('edit');
+        return next;
+      },
+      { replace: true },
+    );
   const detailQuery = useQuery({
     queryKey: ['admin', 'evaluation', id],
     queryFn: () => api<AdminEvaluationDetail>(`/api/admin/evaluations/${id}`),
@@ -245,8 +275,12 @@ export function EvaluationReviewPage() {
 
   const back = (
     <Link
-      to="/admin/evaluations"
-      className="text-sm font-semibold text-ischool-blue hover:underline"
+      to={
+        params.get('teamId')
+          ? `/admin/evaluations?${new URLSearchParams({ teamId: params.get('teamId')! })}`
+          : '/admin/evaluations'
+      }
+      className="text-sm font-semibold text-ischool-blue-dark hover:underline"
     >
       ← Evaluations
     </Link>
@@ -269,13 +303,41 @@ export function EvaluationReviewPage() {
   return (
     <div className="space-y-6">
       {back}
+      {d.lastAdminCorrection && (
+        <Alert tone="info" title="Modified by an administrator">
+          Last correction {formatDateTime(d.lastAdminCorrection.at)} by{' '}
+          {d.lastAdminCorrection.byEmail}.
+        </Alert>
+      )}
+      {(d.team.status === 'archived' || !d.judgeAssigned) && (
+        <Alert tone="warning" title="Historical submission">
+          This evaluation is excluded from official rankings.
+        </Alert>
+      )}
+      {editing && e.status === 'submitted' && (
+        <EditSubmission
+          key={e.id}
+          detail={d}
+          onClose={() => setEditing(false)}
+          onSaved={(updated) => {
+            setEditing(false);
+            queryClient.setQueryData(['admin', 'evaluation', id], updated);
+            void queryClient.invalidateQueries({ queryKey: ['admin'] });
+            void queryClient.invalidateQueries({ queryKey: ['judge'] });
+            toast('Submission corrected. Status remains Submitted.');
+          }}
+        />
+      )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-ahly-red">Evaluation review · read-only</p>
+          <p className="eyebrow">Evaluation review · read-only</p>
           <h1 className="text-2xl font-bold sm:text-3xl">
             {d.judge.fullName} → {d.team.teamCode}
           </h1>
         </div>
+        {e.status === 'submitted' && (
+          <Button onClick={() => setEditing(true)}>Edit Submission</Button>
+        )}
         {e.status === 'submitted' && (
           <Button
             variant="secondary"
@@ -314,7 +376,7 @@ export function EvaluationReviewPage() {
         <Info label="Team" value={`${d.team.teamCode} · ${d.team.name}`} />
         <Info label="Project" value={d.team.projectName} />
         <div>
-          <p className="text-xs font-semibold tracking-wide text-black/50 uppercase">Judge</p>
+          <p className="text-xs font-semibold tracking-wide text-muted uppercase">Judge</p>
           <p className="mt-1 font-semibold">
             {d.judge.fullName} {d.judge.role === 'admin' && <Badge tone="red">Admin</Badge>}{' '}
             {d.judge.accountStatus === 'disabled' && <Badge tone="gray">Disabled</Badge>}
@@ -322,7 +384,7 @@ export function EvaluationReviewPage() {
           <p className="text-sm break-all text-black/60">{d.judge.email}</p>
         </div>
         <div>
-          <p className="text-xs font-semibold tracking-wide text-black/50 uppercase">Status</p>
+          <p className="text-xs font-semibold tracking-wide text-muted uppercase">Status</p>
           <p className="mt-1">
             <Badge tone={PROGRESS_TONES[e.status]}>{EVALUATION_PROGRESS_LABELS[e.status]}</Badge>
             {d.team.status === 'archived' && (
@@ -331,7 +393,7 @@ export function EvaluationReviewPage() {
               </span>
             )}
           </p>
-          <p className="mt-1 text-xs text-black/55">
+          <p className="mt-1 text-xs text-muted">
             {e.submittedAt
               ? `Submitted ${formatDateTime(e.submittedAt)}`
               : `${e.ratedCount}/8 rated`}
@@ -341,7 +403,7 @@ export function EvaluationReviewPage() {
 
       <Card className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
         <div>
-          <p className="text-xs font-semibold tracking-wide text-black/50 uppercase">
+          <p className="text-xs font-semibold tracking-wide text-muted uppercase">
             Rubric version {e.rubricVersionNo} weights
           </p>
           <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
@@ -354,24 +416,24 @@ export function EvaluationReviewPage() {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-black/55">
+          <p className="mt-2 text-xs text-muted">
             Last saved {formatDateTime(d.lastSavedAt)} · {d.saveCount} save
             {d.saveCount === 1 ? '' : 's'}
             {d.reopen && ` · reopened ${d.reopen.count} time${d.reopen.count === 1 ? '' : 's'}`}
           </p>
         </div>
         <p className="text-right">
-          <span className="block text-xs font-semibold tracking-wide text-black/50 uppercase">
+          <span className="block text-xs font-semibold tracking-wide text-muted uppercase">
             {e.status === 'submitted' ? 'Final score' : 'Score so far'}
           </span>
-          <span className="text-3xl font-bold text-ahly-red tabular-nums">
+          <span className="text-3xl font-bold text-ischool-blue-dark tabular-nums">
             {formatScore(e.totalScore)}
           </span>
-          <span className="text-black/55"> / 100</span>
+          <span className="text-muted"> / 100</span>
         </p>
       </Card>
 
-      <RubricIntro rubric={d.rubric} />
+      <RubricIntro rubric={d.rubric} nested />
       <ScoringForm rubric={d.rubric} input={inputOf(e)} readOnly />
 
       <section aria-labelledby="history-heading" className="space-y-3">
@@ -380,11 +442,11 @@ export function EvaluationReviewPage() {
         </h2>
         <Card>
           {historyQuery.isPending ? (
-            <p className="text-sm text-black/55">Loading history…</p>
+            <p className="text-sm text-muted">Loading history…</p>
           ) : historyQuery.isError ? (
             <Alert tone="error">{historyQuery.error.message}</Alert>
           ) : historyQuery.data.events.length === 0 ? (
-            <p className="text-sm text-black/55">No history recorded.</p>
+            <p className="text-sm text-muted">No history recorded.</p>
           ) : (
             <ol className="relative space-y-5 before:absolute before:top-2 before:bottom-2 before:left-[5px] before:w-0.5 before:bg-black/10">
               {historyQuery.data.events.map((ev) => (
@@ -392,7 +454,7 @@ export function EvaluationReviewPage() {
               ))}
             </ol>
           )}
-          <p className="mt-4 text-xs text-black/45">
+          <p className="mt-4 text-xs text-muted">
             Draft saves are recorded at most every 10 minutes; the save count above includes every
             save.
           </p>

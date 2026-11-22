@@ -1,8 +1,10 @@
-import mysql, { type Connection } from 'mysql2/promise';
+import { testMysql as mysql } from './helpers.js';
+import { type Connection } from 'mysql2/promise';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAppUser } from '../../src/db/appUser.js';
 import {
   adminServer,
+  config,
   connectTest,
   dropDatabase,
   expectRefused,
@@ -10,15 +12,22 @@ import {
   TEST_DB,
 } from './helpers.js';
 
-const APP_USER = 'judging_app_test';
+const APP_USER = `jt_${TEST_DB.slice(-28).replace(/[^a-zA-Z0-9_]/g, '_')}`;
 const APP_PASSWORD = 'App-User-Test-Pass-1!';
 let admin: Connection;
 let app: Connection;
+let accountOwned = false;
 
 beforeAll(async () => {
   await freshTestDatabase();
   admin = await connectTest();
+  if ([config.db.user, config.dbAdmin.user].includes(APP_USER))
+    throw new Error('Refusing to alter a configured MySQL account');
+  const [existing] = await admin.query('SELECT User FROM mysql.user WHERE User = ?', [APP_USER]);
+  if ((existing as unknown[]).length)
+    throw new Error('Refusing to replace a pre-existing MySQL test account');
   await createAppUser(admin, { user: APP_USER, password: APP_PASSWORD, database: TEST_DB });
+  accountOwned = true;
   app = await mysql.createConnection({
     host: adminServer.host,
     port: adminServer.port,
@@ -30,8 +39,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.end();
-  await admin.query(`DROP USER IF EXISTS '${APP_USER}'@'localhost', '${APP_USER}'@'127.0.0.1'`);
-  await admin.end();
+  if (accountOwned)
+    await admin.query(`DROP USER IF EXISTS '${APP_USER}'@'localhost', '${APP_USER}'@'127.0.0.1'`);
+  await admin?.end();
   await dropDatabase(TEST_DB);
 });
 

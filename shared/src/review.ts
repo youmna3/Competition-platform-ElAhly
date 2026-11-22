@@ -99,6 +99,7 @@ export interface AdminEvaluationDetail {
   lastSavedAt: string | null;
   saveCount: number;
   reopen: ReopenInfo | null;
+  lastAdminCorrection?: { at: string; byEmail: string | null } | null;
   canReopen: boolean;
   reopenBlockedReason: string | null;
 }
@@ -123,7 +124,7 @@ export interface SubmissionSnapshot {
 }
 
 export type EvaluationEventType =
-  'started' | 'draft_saved' | 'submitted' | 'reopened' | 'resubmitted';
+  'started' | 'draft_saved' | 'submitted' | 'reopened' | 'resubmitted' | 'admin_corrected';
 
 export interface EvaluationEvent {
   id: number;
@@ -138,6 +139,7 @@ export interface EvaluationEvent {
   reason: string | null;
   /** Present on submissions made since history was recorded. */
   snapshot: SubmissionSnapshot | null;
+  previousSnapshot?: SubmissionSnapshot | null;
 }
 
 export interface EvaluationHistoryResponse {

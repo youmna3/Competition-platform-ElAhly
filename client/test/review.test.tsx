@@ -376,7 +376,7 @@ describe('Evaluations list', () => {
     expect(screen.getAllByText('3/8 rated').length).toBeGreaterThan(0);
     expect(screen.getAllByText('80.00').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Mixed rubric versions').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Reopened ×1').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Reset ×1').length).toBeGreaterThan(0);
     expect(screen.getByText('not comparable')).toBeInTheDocument();
   });
 
@@ -439,8 +439,8 @@ describe('Evaluation review', () => {
       'href',
       '/admin/settings',
     );
-    expect(screen.getByRole('button', { name: 'Edit Submission' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reopen…' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Edit Submission' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset…' })).toBeDisabled();
   });
 
   it('reopens only with a reason of at least five characters, after confirmation', async () => {
@@ -468,9 +468,9 @@ describe('Evaluation review', () => {
       return undefined;
     });
     renderAt('/admin/evaluations/7');
-    await userEvent.click(await screen.findByRole('button', { name: 'Reopen…' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Reset…' }));
     const dialog = await screen.findByRole('dialog');
-    const confirm = within(dialog).getByRole('button', { name: 'Reopen evaluation' });
+    const confirm = within(dialog).getByRole('button', { name: 'Reset evaluation' });
     expect(confirm).toBeDisabled();
     expect(within(dialog).queryByText('This is your own evaluation')).not.toBeInTheDocument();
     await userEvent.type(within(dialog).getByLabelText('Reason (required)'), 'typo');
@@ -481,9 +481,7 @@ describe('Evaluation review', () => {
     await waitFor(() =>
       expect(calls.find((c) => c.url.endsWith('/reopen'))?.body).toEqual({ reason: 'typo fix' }),
     );
-    expect(
-      await screen.findByText('Reopened, waiting for the judge to resubmit'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Reset, waiting for the judge to resubmit')).toBeInTheDocument();
   });
 
   it('warns an administrator reopening their own evaluation, and explains when reopening is blocked', async () => {
@@ -515,11 +513,11 @@ describe('Evaluation review', () => {
             : undefined,
     );
     const { unmount } = renderAt('/admin/evaluations/7');
-    await userEvent.click(await screen.findByRole('button', { name: 'Reopen…' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Reset…' }));
     expect(await screen.findByText('This is your own evaluation')).toBeInTheDocument();
     unmount();
     renderAt('/admin/evaluations/8');
-    expect(await screen.findByRole('button', { name: 'Reopen…' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Reset…' })).toBeDisabled();
     expect(screen.getByText('The judge is no longer assigned to this team.')).toBeInTheDocument();
   });
 });
@@ -632,13 +630,13 @@ describe('Judge notice after reopening', () => {
     );
     const { unmount } = renderAt('/judge');
     expect(
-      await screen.findByText('An administrator reopened your evaluation'),
+      await screen.findByText('An administrator sent your evaluation back to you'),
     ).toBeInTheDocument();
     expect(screen.getByText(/Wrong team scored/)).toBeInTheDocument();
     unmount();
     renderAt('/judge/teams/1');
     expect(
-      await screen.findByText('An administrator reopened this evaluation'),
+      await screen.findByText('An administrator sent this evaluation back to you'),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(
@@ -652,55 +650,18 @@ describe('Judge notice after reopening', () => {
 });
 
 describe('Admin submission editor', () => {
-  it('requires reason and before/after confirmation and saves all ratings and notes with the original version', async () => {
-    const calls = mockApi(adminUser, (c) =>
-      c.url === '/api/admin/evaluations/7/submission'
+  it('is not offered on the review page; administrators use Reset instead', async () => {
+    mockApi(adminUser, (c) =>
+      c.url === '/api/admin/evaluations/7'
         ? { status: 200, body: detail() }
-        : c.url === '/api/admin/evaluations/7'
-          ? { status: 200, body: detail() }
-          : c.url.endsWith('/history')
-            ? { status: 200, body: { events } }
-            : undefined,
+        : c.url.endsWith('/history')
+          ? { status: 200, body: { events } }
+          : undefined,
     );
-    renderAt('/admin/evaluations/7');
-    const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Edit Submission' }));
-    let dialog = screen.getByRole('dialog');
-    expect(within(dialog).getAllByRole('radiogroup')).toHaveLength(8);
-    expect(within(dialog).getByLabelText('Note on Idea A (optional)')).toHaveValue('Original idea');
-    expect(within(dialog).getByRole('button', { name: 'Review changes' })).toBeDisabled();
-    await user.click(
-      within(within(dialog).getAllByRole('radiogroup')[0]!).getByRole('radio', { name: '5 stars' }),
-    );
-    await user.clear(within(dialog).getByLabelText('Overall notes (optional)'));
-    await user.type(within(dialog).getByLabelText('Overall notes (optional)'), 'Corrected notes');
-    await user.type(
-      within(dialog).getByLabelText('Reason for editing (required)'),
-      'Scoring correction',
-    );
-    await user.click(within(dialog).getByRole('button', { name: 'Review changes' }));
-    dialog = screen.getByRole('dialog');
-    expect(
-      within(dialog).getByRole('table', { name: 'Before and after correction' }),
-    ).toBeInTheDocument();
-    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
-    await user.click(within(dialog).getByRole('button', { name: 'Confirm and save correction' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    const sent = calls.find((c) => c.method === 'PUT')!.body as {
-      confirmed: boolean;
-      reason: string;
-      rowVersion: number;
-      ratings: { rating: number }[];
-      overallNotes: string;
-    };
-    expect(sent).toMatchObject({
-      confirmed: true,
-      reason: 'Scoring correction',
-      rowVersion: 9,
-      overallNotes: 'Corrected notes',
-    });
-    expect(sent.ratings[0]!.rating).toBe(5);
-    expect(sent.ratings).toHaveLength(8);
+    renderAt('/admin/evaluations/7?edit=1');
+    expect(await screen.findByRole('button', { name: 'Reset…' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Edit Submission' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
 
@@ -780,27 +741,26 @@ describe('Submission correction concurrency', () => {
   });
 });
 
-describe('Visible per-judge submission editing', () => {
-  it('shows Edit Submission beside each submitted evaluation, but not a draft', async () => {
+describe('Per-judge Reset in the Evaluations list', () => {
+  it('shows Reset beside each submitted evaluation, but not a draft', async () => {
     mockApi(adminUser, (c) =>
       c.url.startsWith('/api/admin/evaluations?') ? { status: 200, body: listResponse } : undefined,
     );
     renderAt('/admin/evaluations');
-    const links = await screen.findAllByRole('link', { name: /Edit Submission.*Judge One/ });
+    const links = await screen.findAllByRole('link', { name: /Reset.*Judge One/ });
     for (const link of links)
-      expect(link).toHaveAttribute('href', '/admin/evaluations/7?edit=1&teamId=1');
-    for (const link of screen.getAllByRole('link', { name: /Edit Submission.*Judge Two/ }))
-      expect(link).toHaveAttribute('href', '/admin/evaluations/8?edit=1&teamId=1');
-    expect(
-      screen.queryByRole('link', { name: /Edit Submission.*Youmna Admin/ }),
-    ).not.toBeInTheDocument();
+      expect(link).toHaveAttribute('href', '/admin/evaluations/7?reset=1&from=list&teamId=1');
+    for (const link of screen.getAllByRole('link', { name: /Reset.*Judge Two/ }))
+      expect(link).toHaveAttribute('href', '/admin/evaluations/8?reset=1&from=list&teamId=1');
+    expect(screen.queryByRole('link', { name: /Reset.*Youmna Admin/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Edit Submission/ })).not.toBeInTheDocument();
     await userEvent.click(
       screen.getAllByRole('button', { name: 'View evaluations for Falcons' })[0]!,
     );
     expect(
       await screen.findByRole('region', { name: 'Evaluations for Falcons' }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: /Edit Submission/ })).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: /^Reset — / })).toHaveLength(2);
   });
   it.each([0, 1, 2, 3])(
     'renders %i actual assigned judges without hardcoded placeholders',
@@ -825,13 +785,13 @@ describe('Visible per-judge submission editing', () => {
       );
       renderAt('/admin/evaluations?teamId=1');
       await screen.findByRole('region', { name: 'Evaluations for Falcons' });
-      expect(screen.queryAllByRole('link', { name: /Edit Submission/ })).toHaveLength(count);
+      expect(screen.queryAllByRole('link', { name: /^Reset — / })).toHaveLength(count);
       expect(
         screen.getByText(new RegExp(`${count} of ${count} assigned judge`)),
       ).toBeInTheDocument();
     },
   );
-  it('direct edit links open the selected judge and save to that evaluation API only', async () => {
+  it('a Reset link opens the selected judge, resets only that evaluation and returns to the list', async () => {
     const d = detail(
       {
         judge: {
@@ -842,40 +802,45 @@ describe('Visible per-judge submission editing', () => {
           accountStatus: 'active',
         },
       },
-      { id: 8, judgeId: 3, overallNotes: 'Second judge original notes' },
+      { id: 8, judgeId: 3 },
+    );
+    const after = detail(
+      {
+        canReopen: false,
+        reopen: {
+          at: '2026-11-22T13:00:00.000Z',
+          byEmail: 'youmna54@gmail.com',
+          reason: 'Wrong team scored',
+          count: 1,
+        },
+      },
+      { id: 8, judgeId: 3, status: 'draft', submittedAt: null },
     );
     const calls = mockApi(adminUser, (c) =>
-      c.url === '/api/admin/evaluations/8/submission'
-        ? { status: 200, body: d }
+      c.url === '/api/admin/evaluations/8/reopen'
+        ? { status: 200, body: after }
         : c.url === '/api/admin/evaluations/8'
           ? { status: 200, body: d }
           : c.url === '/api/admin/evaluations/8/history'
             ? { status: 200, body: { events: [] } }
-            : undefined,
+            : c.url.startsWith('/api/admin/evaluations?')
+              ? { status: 200, body: listResponse }
+              : undefined,
     );
-    renderAt('/admin/evaluations/8?edit=1&teamId=1');
-    let dialog = await screen.findByRole('dialog', { name: 'Edit Submission' });
-    expect(dialog).toHaveTextContent('Judge Two');
-    expect(within(dialog).getAllByRole('radiogroup')).toHaveLength(8);
-    expect(within(dialog).getByLabelText('Overall notes (optional)')).toHaveValue(
-      'Second judge original notes',
+    renderAt('/admin/evaluations/8?reset=1&from=list&teamId=1');
+    const dialog = await screen.findByRole('dialog', { name: /Reset Judge Two’s evaluation/ });
+    const confirm = within(dialog).getByRole('button', { name: 'Reset evaluation' });
+    expect(confirm).toBeDisabled();
+    expect(within(dialog).getByText(/Type a reason/)).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText('Reason (required)'), 'Wrong team scored');
+    await userEvent.click(confirm);
+    await waitFor(() =>
+      expect(calls.filter((c) => c.method === 'POST').map((c) => c.url)).toEqual([
+        '/api/admin/evaluations/8/reopen',
+      ]),
     );
-    await userEvent.type(
-      within(dialog).getByLabelText('Reason for editing (required)'),
-      'Verified selected judge correction',
-    );
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Review changes' }));
-    dialog = screen.getByRole('dialog');
-    await userEvent.click(
-      within(dialog).getByRole('button', { name: 'Confirm and save correction' }),
-    );
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(calls.filter((c) => c.method === 'PUT').map((c) => c.url)).toEqual([
-      '/api/admin/evaluations/8/submission',
-    ]);
-    expect(screen.getByRole('link', { name: /^.\sEvaluations$/ })).toHaveAttribute(
-      'href',
-      '/admin/evaluations?teamId=1',
-    );
+    expect(
+      await screen.findByRole('region', { name: 'Evaluations for Falcons' }),
+    ).toBeInTheDocument();
   });
 });

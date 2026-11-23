@@ -96,7 +96,7 @@ export function JudgeTeamsPage() {
         <Alert tone="success">Your password was changed. Other devices have been signed out.</Alert>
       )}
       {reopened.length > 0 && (
-        <Alert tone="warning" title="An administrator reopened your evaluation">
+        <Alert tone="warning" title="An administrator sent your evaluation back to you">
           <ul className="space-y-1">
             {reopened.map((a) => (
               <li key={a.teamId}>
@@ -207,7 +207,7 @@ export function JudgeTeamsPage() {
                     </div>
                     {(a.reopenNotice || a.outdatedVersion) && (
                       <div className="flex flex-wrap gap-2">
-                        {a.reopenNotice && <Badge tone="red">Reopened</Badge>}
+                        {a.reopenNotice && <Badge tone="red">Sent back</Badge>}
                         {a.outdatedVersion && (
                           <Badge tone="gold">Older rubric v{a.rubricVersionNo}</Badge>
                         )}

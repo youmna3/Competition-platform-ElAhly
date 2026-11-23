@@ -165,6 +165,14 @@ export function EditSubmission({
         s.criteria.map((c) => input.ratings.find((r) => r.criterionId === c.id)?.rating ?? null),
       ),
     ).total != null;
+  const reasonLength = reason.trim().length;
+  const blocker = !complete
+    ? 'Score every criterion to continue.'
+    : reasonLength < 5
+      ? 'Add a reason for editing (at least 5 characters) to continue.'
+      : reasonLength > 500
+        ? 'The reason must be 500 characters or fewer.'
+        : null;
   async function reload(keepChanges: boolean) {
     setBusy(true);
     setError(null);
@@ -223,6 +231,11 @@ export function EditSubmission({
       description={`${baseline.judge.fullName} · ${baseline.team.teamCode} · original rubric v${rubric.versionNo}. Status stays Submitted.`}
       footer={
         <>
+          {!confirm && blocker && (
+            <p className="self-center text-xs text-muted sm:mr-auto" role="status">
+              {blocker}
+            </p>
+          )}
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
@@ -236,12 +249,11 @@ export function EditSubmission({
               </Button>
             </>
           ) : (
-            <Button
-              disabled={!complete || reason.trim().length < 5 || reason.trim().length > 500}
-              onClick={() => setConfirm(true)}
-            >
-              Review changes
-            </Button>
+            <>
+              <Button disabled={!!blocker} onClick={() => setConfirm(true)}>
+                Review changes
+              </Button>
+            </>
           )}
         </>
       }
@@ -285,15 +297,17 @@ export function EditSubmission({
         </>
       ) : (
         <>
-          <TextField
-            label="Reason for editing (required)"
-            value={reason}
-            minLength={5}
-            maxLength={500}
-            onChange={(e) => setReason(e.target.value)}
-            hint="5–500 characters. This reason is recorded in history."
-          />
           <ScoringForm rubric={rubric} input={input} onChange={setInput} />
+          <div className="rounded-2xl border border-ischool-blue/25 bg-ischool-blue-soft/50 p-4">
+            <TextField
+              label="Reason for editing (required)"
+              value={reason}
+              minLength={5}
+              maxLength={500}
+              onChange={(e) => setReason(e.target.value)}
+              hint="5–500 characters. This reason is recorded in history."
+            />
+          </div>
         </>
       )}
     </Modal>

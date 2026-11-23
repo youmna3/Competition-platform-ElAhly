@@ -152,7 +152,7 @@ export function EvaluationPage() {
             {evaluation.status === 'submitted'
               ? 'Submitted'
               : evaluation.reopenedCount
-                ? 'Reopened · draft'
+                ? 'Sent back · draft'
                 : 'Draft'}
           </Badge>
         )}
@@ -799,7 +799,7 @@ function EditableEvaluation({
   return (
     <>
       {evaluation.reopenedAt && evaluation.reopenedCount > 0 && (
-        <Alert tone="warning" title="An administrator reopened this evaluation">
+        <Alert tone="warning" title="An administrator sent this evaluation back to you">
           <p>
             Reopened {formatDateTime(evaluation.reopenedAt)}. Reason: “{evaluation.reopenReason}”.
           </p>

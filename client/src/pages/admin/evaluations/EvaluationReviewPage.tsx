@@ -1,7 +1,7 @@
 import { useCompetition } from '../../../components/CompetitionNotice';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
   COMPETITION_LABELS,
   EVALUATION_PROGRESS_LABELS,
@@ -22,7 +22,7 @@ import { useToast } from '../../../components/Toast';
 import { Alert, Badge, Button, Card } from '../../../components/ui';
 import { inputOf } from '../../judge/useEvaluationAutosave';
 import { Info, RubricIntro, ScoringForm } from '../../judge/EvaluationPage';
-import { EditSubmission, SubmissionComparison } from './EditSubmission';
+import { SubmissionComparison } from './EditSubmission';
 import { PROGRESS_TONES, formatDateTime } from './EvaluationsPage';
 
 const EVENT_STYLE: Record<EvaluationEvent['event'], { label: string; dot: string }> = {
@@ -30,7 +30,7 @@ const EVENT_STYLE: Record<EvaluationEvent['event'], { label: string; dot: string
   started: { label: 'Evaluation started', dot: 'bg-black/30' },
   draft_saved: { label: 'Draft saved', dot: 'bg-ischool-blue' },
   submitted: { label: 'Submitted', dot: 'bg-emerald-600' },
-  reopened: { label: 'Reopened by an administrator', dot: 'bg-ahly-gold' },
+  reopened: { label: 'Reset by an administrator', dot: 'bg-ahly-gold' },
   resubmitted: { label: 'Resubmitted', dot: 'bg-emerald-600' },
 };
 
@@ -202,16 +202,16 @@ function ReopenDialog({
 
   return (
     <Modal
-      title={`Reopen ${detail.judge.fullName}’s evaluation of ${detail.team.teamCode}?`}
-      description="The judge can then change it and must submit it again."
+      title={`Reset ${detail.judge.fullName}’s evaluation of ${detail.team.teamCode}?`}
+      description={`It goes back to ${detail.judge.fullName} so they can fix it and submit again.`}
       onClose={onClose}
       canClose={!busy}
     >
       {error && <Alert tone="error">{error}</Alert>}
       {ownEvaluation && (
         <Alert tone="warning" title="This is your own evaluation">
-          To avoid a conflict of interest, it’s better if another administrator reopens it. The
-          audit log records that you reopened your own evaluation.
+          To avoid a conflict of interest, it’s better if another administrator resets it. The audit
+          log records that you reset your own evaluation.
         </Alert>
       )}
       <ul className="list-disc space-y-1 pl-5 text-sm text-black/70">
@@ -247,12 +247,25 @@ function ReopenDialog({
           At least {REOPEN_REASON.min} characters. {trimmed.length}/{REOPEN_REASON.max}
         </p>
       </div>
-      <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+      <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:items-center sm:justify-end">
+        {!valid && (
+          <p className="text-xs text-muted sm:mr-auto" role="status">
+            {trimmed.length < REOPEN_REASON.min
+              ? `Type a reason (${REOPEN_REASON.min}+ characters) to enable Reset.`
+              : `The reason must be ${REOPEN_REASON.max} characters or fewer.`}
+          </p>
+        )}
         <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
           Cancel
         </Button>
-        <Button type="button" variant="danger" onClick={confirm} disabled={busy || !valid}>
-          {busy ? 'Reopening…' : 'Reopen evaluation'}
+        <Button
+          type="button"
+          variant="danger"
+          className="whitespace-nowrap"
+          onClick={confirm}
+          disabled={busy || !valid}
+        >
+          {busy ? 'Resetting…' : 'Reset evaluation'}
         </Button>
       </div>
     </Modal>
@@ -266,15 +279,16 @@ export function EvaluationReviewPage() {
   const { user } = useAuth();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const [reopening, setReopening] = useState(false);
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const editing = params.get('edit') === '1';
-  const setEditing = (open: boolean) =>
+  // ?reset=1 opens the Reset dialog directly (used by the Reset button in the Evaluations list).
+  const reopening = params.get('reset') === '1';
+  const setReopening = (open: boolean) =>
     setParams(
       (current) => {
         const next = new URLSearchParams(current);
-        if (open) next.set('edit', '1');
-        else next.delete('edit');
+        if (open) next.set('reset', '1');
+        else next.delete('reset');
         return next;
       },
       { replace: true },
@@ -329,20 +343,6 @@ export function EvaluationReviewPage() {
           This evaluation is excluded from official rankings.
         </Alert>
       )}
-      {editing && e.status === 'submitted' && d.canCorrect !== false && !lifecycleBlocked && (
-        <EditSubmission
-          key={e.id}
-          detail={d}
-          onClose={() => setEditing(false)}
-          onSaved={(updated) => {
-            setEditing(false);
-            queryClient.setQueryData(['admin', 'evaluation', id], updated);
-            void queryClient.invalidateQueries({ queryKey: ['admin'] });
-            void queryClient.invalidateQueries({ queryKey: ['judge'] });
-            toast('Submission corrected. Status remains Submitted.');
-          }}
-        />
-      )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="eyebrow">Evaluation Details</p>
@@ -353,27 +353,20 @@ export function EvaluationReviewPage() {
         {e.status === 'submitted' && (
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              disabled={d.canCorrect === false || lifecycleBlocked}
-              onClick={() => setEditing(true)}
-            >
-              Edit Submission
-            </Button>
-            <Button
               variant="secondary"
               className="!text-ahly-red-dark"
               onClick={() => setReopening(true)}
               disabled={!d.canReopen || lifecycleBlocked}
             >
-              Reopen…
+              Reset…
             </Button>
           </div>
         )}
       </div>
       {e.status === 'submitted' && lifecycleBlocked && (
         <Alert tone="info" title="Judging is not open">
-          Submissions can only be corrected or reopened while the competition is{' '}
-          <strong>Judging Open</strong>. The competition is currently{' '}
-          <strong>{COMPETITION_LABELS[lifecycle.data!.state]}</strong>.{' '}
+          Submissions can only be reset while the competition is <strong>Judging Open</strong>. The
+          competition is currently <strong>{COMPETITION_LABELS[lifecycle.data!.state]}</strong>.{' '}
           <Link to="/admin/settings" className="font-semibold text-ischool-blue-dark underline">
             Go to Settings
           </Link>
@@ -383,9 +376,9 @@ export function EvaluationReviewPage() {
         <Alert tone="info">{d.reopenBlockedReason}</Alert>
       )}
       {d.reopen && e.status === 'draft' && (
-        <Alert tone="warning" title="Reopened, waiting for the judge to resubmit">
-          Reopened {formatDateTime(d.reopen.at)} by {d.reopen.byEmail ?? 'an administrator'}.
-          Reason: “{d.reopen.reason}”.
+        <Alert tone="warning" title="Reset, waiting for the judge to resubmit">
+          Reset {formatDateTime(d.reopen.at)} by {d.reopen.byEmail ?? 'an administrator'}. Reason: “
+          {d.reopen.reason}”.
         </Alert>
       )}
       {outdated && (
@@ -458,7 +451,7 @@ export function EvaluationReviewPage() {
           <p className="mt-2 text-xs text-muted">
             Last saved {formatDateTime(d.lastSavedAt)} · {d.saveCount} save
             {d.saveCount === 1 ? '' : 's'}
-            {d.reopen && ` · reopened ${d.reopen.count} time${d.reopen.count === 1 ? '' : 's'}`}
+            {d.reopen && ` · reset ${d.reopen.count} time${d.reopen.count === 1 ? '' : 's'}`}
           </p>
         </div>
         <p className="text-right">
@@ -500,7 +493,7 @@ export function EvaluationReviewPage() {
         </Card>
       </section>
 
-      {reopening && (
+      {reopening && e.status === 'submitted' && d.canReopen && !lifecycleBlocked && (
         <ReopenDialog
           detail={d}
           ownEvaluation={d.judge.id === user?.id}
@@ -509,7 +502,13 @@ export function EvaluationReviewPage() {
             setReopening(false);
             queryClient.setQueryData(['admin', 'evaluation', id], updated);
             void queryClient.invalidateQueries({ queryKey: ['admin'] });
-            toast(`Evaluation reopened. ${d.judge.fullName} has been notified.`);
+            toast(`Evaluation reset. ${d.judge.fullName} can now fix it and submit again.`);
+            if (params.get('from') === 'list')
+              void navigate(
+                params.get('teamId')
+                  ? `/admin/evaluations?${new URLSearchParams({ teamId: params.get('teamId')! })}`
+                  : '/admin/evaluations',
+              );
           }}
         />
       )}

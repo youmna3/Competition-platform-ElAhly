@@ -59,50 +59,92 @@ export function EvaluationsHeader({ children }: { children?: ReactNode }) {
   );
 }
 
-function JudgeLine({ j, teamId }: { j: AdminEvaluationJudge; teamId: number }) {
+function JudgeLine({
+  j,
+  teamId,
+  card = false,
+}: {
+  j: AdminEvaluationJudge;
+  teamId: number;
+  card?: boolean;
+}) {
   const lifecycle = useCompetition();
-  const canCorrect = lifecycle.data?.state === 'judging_open';
+  const canReset = lifecycle.data?.state === 'judging_open';
   const label = (
     <>
       <span className="font-medium">{j.fullName}</span>
       {j.role === 'admin' && <span className="text-xs text-muted"> (admin)</span>}
     </>
   );
+  const score =
+    j.status === 'submitted' && j.totalScore != null
+      ? formatScore(j.totalScore)
+      : j.status === 'draft'
+        ? `${j.ratedCount}/${j.requiredCount || '?'} rated`
+        : '—';
+  const editable = canReset && j.status === 'submitted' && j.evaluationId != null;
+  // Fixed columns so status, score and the action line up from one judge to the next.
   return (
-    <li className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-      {j.evaluationId ? (
-        <Link
-          to={`/admin/evaluations/${j.evaluationId}`}
-          className="hover:underline"
-          aria-label={`Review ${j.fullName}’s evaluation`}
-        >
-          {label}
-        </Link>
-      ) : (
-        <span>{label}</span>
-      )}
-      <Badge tone={PROGRESS_TONES[j.status]}>{EVALUATION_PROGRESS_LABELS[j.status]}</Badge>
-      <span className="text-black/60 tabular-nums">
-        {j.status === 'submitted' && j.totalScore != null
-          ? formatScore(j.totalScore)
-          : j.status === 'draft'
-            ? `${j.ratedCount}/${j.requiredCount || '?'} rated`
-            : ''}
+    <li
+      className={
+        card
+          ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-sm'
+          : 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 py-1.5 text-sm sm:grid-cols-[minmax(9rem,1fr)_6.5rem_4.5rem_2rem_6.5rem]'
+      }
+    >
+      <div className="min-w-0">
+        {j.evaluationId ? (
+          <Link
+            to={`/admin/evaluations/${j.evaluationId}`}
+            className="hover:underline"
+            aria-label={`Review ${j.fullName}’s evaluation`}
+          >
+            {label}
+          </Link>
+        ) : (
+          <span>{label}</span>
+        )}
+        {(j.reopenedCount > 0 || j.accountStatus === 'disabled') && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {j.reopenedCount > 0 && <Badge tone="red">Reset ×{j.reopenedCount}</Badge>}
+            {j.accountStatus === 'disabled' && <Badge tone="gray">Disabled</Badge>}
+          </div>
+        )}
+      </div>
+      <div className={card ? 'justify-self-end' : 'justify-self-end sm:justify-self-start'}>
+        <Badge tone={PROGRESS_TONES[j.status]}>{EVALUATION_PROGRESS_LABELS[j.status]}</Badge>
+      </div>
+      <span
+        className={`font-semibold text-black/75 tabular-nums ${card ? '' : 'sm:text-right'} ${j.status === 'draft' ? 'text-xs font-normal text-muted' : ''}`}
+      >
+        {score}
       </span>
-      {j.rubricVersionNo != null && (
-        <span className="text-xs text-muted">v{j.rubricVersionNo}</span>
-      )}
-      {j.reopenedCount > 0 && <Badge tone="red">Reopened ×{j.reopenedCount}</Badge>}
-      {j.accountStatus === 'disabled' && <Badge tone="gray">Disabled</Badge>}
-      {canCorrect && j.status === 'submitted' && j.evaluationId != null && (
-        <Link
-          to={`/admin/evaluations/${j.evaluationId}?edit=1&teamId=${teamId}`}
-          className="action-link !min-h-9 !px-3 !py-1.5 !text-xs"
-          aria-label={`Edit Submission — ${j.fullName}`}
-        >
-          Edit Submission
-        </Link>
-      )}
+      <span
+        className={`text-xs text-muted ${card ? 'justify-self-end' : 'justify-self-end sm:justify-self-start'}`}
+      >
+        {j.rubricVersionNo != null ? `v${j.rubricVersionNo}` : ''}
+      </span>
+      <div className={card ? 'col-span-2' : 'col-span-2 sm:col-span-1 sm:justify-self-end'}>
+        {editable && (
+          <Link
+            to={`/admin/evaluations/${j.evaluationId}?reset=1&from=list&teamId=${teamId}`}
+            className={`secondary-link !min-h-9 !px-3 !py-1.5 !text-xs !text-ahly-red-dark hover:!border-ahly-red/30 hover:!bg-ahly-red/5 ${card ? 'w-full' : 'w-full sm:w-[6.5rem]'}`}
+            aria-label={`Reset — ${j.fullName}`}
+            title="Send back to the judge to fix and submit again"
+          >
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden className="size-3.5">
+              <path
+                d="M4 10a6 6 0 1 0 1.8-4.3M4 3.5v3.2h3.2"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Reset
+          </Link>
+        )}
+      </div>
     </li>
   );
 }
@@ -132,18 +174,17 @@ function TeamEvaluations({ team, onBack }: { team: AdminTeamEvaluations; onBack:
           </strong>
         </p>
         {correctionsClosed ? (
-          <Alert tone="info" title="Corrections are available only while judging is open">
+          <Alert tone="info" title="Reset is available only while judging is open">
             The competition is currently{' '}
-            <strong>{COMPETITION_LABELS[lifecycle.data!.state]}</strong>, so Edit Submission is
-            hidden.{' '}
+            <strong>{COMPETITION_LABELS[lifecycle.data!.state]}</strong>, so Reset is hidden.{' '}
             <Link to="/admin/settings" className="font-semibold text-ischool-blue-dark underline">
               Go to Settings
             </Link>
           </Alert>
         ) : (
           <p className="text-sm text-muted">
-            Review each judge separately. Edit Submission corrects that judge’s submitted ratings
-            and notes, with a reason and confirmation.
+            Review each judge separately. Reset sends that judge’s submitted evaluation back to them
+            as a draft so they can fix it and submit again. The old score stays in history.
           </p>
         )}
       </Card>
@@ -153,7 +194,7 @@ function TeamEvaluations({ team, onBack }: { team: AdminTeamEvaluations; onBack:
             <li key={judge.judgeId}>
               <Card className="h-full">
                 <ul>
-                  <JudgeLine j={judge} teamId={team.teamId} />
+                  <JudgeLine j={judge} teamId={team.teamId} card />
                 </ul>
               </Card>
             </li>
@@ -420,7 +461,7 @@ export function EvaluationsPage() {
                         </td>
                         <td className="px-3 py-3">
                           {t.judges.length ? (
-                            <ul className="space-y-1.5">
+                            <ul className="divide-y divide-black/5">
                               {t.judges.map((j) => (
                                 <JudgeLine key={j.judgeId} j={j} teamId={t.teamId} />
                               ))}

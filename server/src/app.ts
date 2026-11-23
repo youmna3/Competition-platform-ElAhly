@@ -5,7 +5,13 @@ import helmet from 'helmet';
 import type { Pool } from 'mysql2/promise';
 import type { DatabaseHealth } from '@judging/shared';
 import type { AuthConfig } from './config.js';
-import { loadUser, sameOriginOnly, sessionMiddleware } from './auth/middleware.js';
+import {
+  loadUser,
+  sameOriginOnly,
+  sessionMiddleware,
+  requireAuth,
+  requireRole,
+} from './auth/middleware.js';
 import { authRouter } from './auth/routes.js';
 import type { MySqlSessionStore } from './auth/sessionStore.js';
 import { healthRouter } from './routes/health.js';
@@ -71,6 +77,17 @@ export function createApp(options: AppOptions): Express {
   if (options.auth) {
     const { pool, config, store } = options.auth;
     app.use('/api', sessionMiddleware(config, store), loadUser(pool, config));
+    app.use(
+      '/api/admin/health',
+      requireAuth,
+      requireRole('admin'),
+      healthRouter({
+        checkDatabase: options.checkDatabase,
+        environment: options.environment,
+        version: options.version,
+        detailed: true,
+      }),
+    );
     app.use('/api/auth', authRouter(pool, config));
     app.use('/api/admin', adminRouter(pool));
     app.use('/api/judge', judgeRouter(pool));

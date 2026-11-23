@@ -16,7 +16,7 @@ import { FullPageSpinner } from '../../components/FullPageSpinner';
 
 function Stat({ label, value, note }: { label: string; value: string | number; note?: string }) {
   return (
-    <Card className="!border-t-2 !border-t-ischool-blue/40 !p-5">
+    <Card className="dashboard-stat !p-5">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
       <p className="mt-2 text-3xl font-bold">{value}</p>
       {note && <p className="mt-1 text-xs text-muted">{note}</p>}
@@ -136,10 +136,7 @@ function CompetitionFigures({
         <Card className="space-y-4">
           <div className="flex items-baseline justify-between gap-2">
             <h3 className="text-sm font-semibold">Top teams</h3>
-            <Link
-              to="/admin/leaderboard"
-              className="text-sm font-semibold text-ischool-blue-dark hover:underline"
-            >
+            <Link to="/admin/leaderboard" className="secondary-link">
               Full leaderboard →
             </Link>
           </div>
@@ -219,11 +216,8 @@ export function AdminDashboardPage() {
             results.
           </p>
         </div>
-        <Link
-          to="/admin/status"
-          className="text-sm font-semibold text-ischool-blue-dark hover:underline"
-        >
-          System status →
+        <Link to="/admin/settings" className="secondary-link">
+          Settings →
         </Link>
       </div>
 
@@ -257,10 +251,7 @@ export function AdminDashboardPage() {
                   : overview.data.rubricState === 'published_with_draft'
                     ? 'Judges use the published version; a draft with changes is waiting. '
                     : 'Judges score against the published rubric. '}
-                <Link
-                  to="/admin/rubric"
-                  className="font-semibold text-ischool-blue-dark hover:underline"
-                >
+                <Link to="/admin/rubric" className="secondary-link">
                   Open Rubric Management
                 </Link>
               </p>

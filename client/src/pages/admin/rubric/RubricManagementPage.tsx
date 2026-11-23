@@ -176,10 +176,7 @@ export function RubricManagementPage() {
         )}
         {draft && <Badge tone="gold">Draft · version {draft.versionNo}</Badge>}
         {published && (
-          <Link
-            to="/rubric"
-            className="text-sm font-semibold text-ischool-blue-dark hover:underline"
-          >
+          <Link to="/rubric" className="secondary-link">
             View as judges see it →
           </Link>
         )}

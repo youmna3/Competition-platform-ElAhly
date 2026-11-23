@@ -8,13 +8,17 @@ export class ApiUnreachableError extends Error {
 }
 
 /**
- * Fetches GET /api/health. A 503 still carries a full health report (database
+ * Fetches administrator-only GET /api/admin/health. A 503 still carries a full health report (database
  * down), so it is returned as data. Only a missing or non-JSON response is an error.
  */
 export async function fetchHealth(signal?: AbortSignal): Promise<HealthResponse> {
   let response: Response;
   try {
-    response = await fetch('/api/health', { signal, headers: { Accept: 'application/json' } });
+    response = await fetch('/api/admin/health', {
+      signal,
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
   } catch {
     throw new ApiUnreachableError();
   }

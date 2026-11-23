@@ -7,6 +7,7 @@ import { ChangePasswordPage } from './pages/auth/ChangePasswordPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { JudgeTeamsPage } from './pages/judge/JudgeTeamsPage';
 import { StatusPage } from './pages/StatusPage';
+import { SettingsPage } from './pages/admin/SettingsPage';
 import { UsersPage } from './pages/admin/users/UsersPage';
 import { TeamsPage } from './pages/admin/teams/TeamsPage';
 import { TeamImportPage } from './pages/admin/teams/TeamImportPage';
@@ -133,6 +134,22 @@ export default function App() {
           element={
             <RequireAuth roles={['judge', 'admin']}>
               <ViewRubricPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/settings/status"
+          element={
+            <RequireAuth roles={['admin']}>
+              <StatusPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/settings"
+          element={
+            <RequireAuth roles={['admin']}>
+              <SettingsPage />
             </RequireAuth>
           }
         />

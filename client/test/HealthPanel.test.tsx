@@ -54,7 +54,9 @@ describe('HealthPanel', () => {
     renderPanel();
 
     const db = await screen.findByRole('region', { name: 'XAMPP MySQL database' });
-    expect(await within(db).findByText('10.4.32-MariaDB')).toBeInTheDocument();
+    expect(await within(db).findByText('Response time')).toBeInTheDocument();
+    expect(screen.queryByText('judging_platform')).not.toBeInTheDocument();
+    expect(screen.queryByText('10.4.32-MariaDB')).not.toBeInTheDocument();
     expect(within(db).getByText('Connected')).toBeInTheDocument();
     expect(
       within(screen.getByRole('region', { name: 'API server' })).getByText('Connected'),
@@ -77,8 +79,8 @@ describe('HealthPanel', () => {
     renderPanel();
 
     const db = await screen.findByRole('region', { name: 'XAMPP MySQL database' });
-    expect(await within(db).findByText('ECONNREFUSED')).toBeInTheDocument();
-    expect(within(db).getByText(/Start MySQL in the XAMPP Control Panel/)).toBeInTheDocument();
+    expect(await within(db).findByText(/Database unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText(/127.0.0.1:3306/)).not.toBeInTheDocument();
     expect(within(db).getByText('Not connected')).toBeInTheDocument();
     // The API itself answered, so it is shown as connected.
     expect(

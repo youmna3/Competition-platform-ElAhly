@@ -1,3 +1,4 @@
+import { TopTeams } from '../../../components/TopTeams';
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
@@ -138,7 +139,7 @@ function RankedTable({
                 <td className="px-4 py-3 text-right text-lg font-bold tabular-nums">
                   {formatScore(t.score)} / {t.maximumScore ?? 100}
                   <span className="block text-xs font-normal text-muted">
-                    Base {formatScore(t.baseAverage ?? t.score)} + Bonus{' '}
+                    Base {formatScore(t.baseAverage ?? t.score)} · Bonus +{' '}
                     {formatScore(t.bonusAverage ?? 0)}
                   </span>
                 </td>
@@ -169,9 +170,15 @@ function RankedTable({
                   <p className="text-sm text-black/60">{t.projectName}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold tabular-nums">{formatScore(t.score)}</p>
+                  <p className="text-2xl font-bold tabular-nums">
+                    {formatScore(t.score)}{' '}
+                    <span className="text-sm font-medium text-muted">
+                      / {t.maximumScore ?? 100}
+                    </span>
+                  </p>
                   <p className="text-xs text-muted">
-                    {provisional ? 'provisional' : 'final'} / {t.maximumScore ?? 100}
+                    Base {formatScore(t.baseAverage ?? t.score)} · Bonus +
+                    {formatScore(t.bonusAverage ?? 0)}
                   </p>
                 </div>
               </div>
@@ -386,6 +393,7 @@ export function LeaderboardPage() {
             </Alert>
           ))}
 
+          {data!.official.available && <TopTeams teams={data!.official.teams} />}
           <section className="space-y-3" aria-labelledby="official-heading">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 id="official-heading" className="text-lg font-bold">

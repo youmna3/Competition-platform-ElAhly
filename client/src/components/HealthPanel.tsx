@@ -46,10 +46,10 @@ function StatusTile({
   return (
     <section
       aria-label={title}
-      className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm"
+      className="ui-card min-w-0 rounded-2xl border border-line bg-white p-5 shadow-card"
       data-tone={tone}
     >
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-semibold">{title}</h3>
         <StatusBadge tone={tone} />
       </div>
@@ -60,9 +60,9 @@ function StatusTile({
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <p className="flex justify-between gap-4">
+    <p className="flex min-w-0 justify-between gap-4">
       <span className="text-muted">{label}</span>
-      <span className="truncate text-right font-medium text-ink">{value}</span>
+      <span className="min-w-0 truncate text-right font-medium text-ink">{value}</span>
     </p>
   );
 }
@@ -95,8 +95,6 @@ export function HealthPanel({ refreshMs = 10_000 }: { refreshMs?: number }) {
             </>
           ) : health ? (
             <>
-              <Detail label="Environment" value={health.app.environment} />
-              <Detail label="Version" value={health.app.version} />
               <Detail label="Uptime" value={`${health.app.uptimeSeconds} s`} />
             </>
           ) : (
@@ -107,14 +105,13 @@ export function HealthPanel({ refreshMs = 10_000 }: { refreshMs?: number }) {
         <StatusTile title="XAMPP MySQL database" tone={dbTone}>
           {db?.status === 'ok' ? (
             <>
-              <Detail label="Database" value={db.database} />
-              <Detail label="Server" value={db.serverVersion} />
               <Detail label="Response time" value={`${db.latencyMs} ms`} />
             </>
           ) : db?.status === 'error' ? (
             <>
-              <p className="font-medium text-ahly-red-dark">{db.code}</p>
-              {db.hint ? <p>{db.hint}</p> : <p>{db.message}</p>}
+              <p className="font-medium text-ahly-red-dark">
+                Database unavailable. Contact the platform administrator.
+              </p>
             </>
           ) : query.isError ? (
             <p>Unknown until the API server is running.</p>

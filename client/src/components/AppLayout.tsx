@@ -1,7 +1,40 @@
-import { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router';
+import { useState, type ComponentProps } from 'react';
+import { NavLink as RouterNavLink, Outlet, useNavigate } from 'react-router';
 import { ROLE_LABELS } from '@judging/shared';
 import { useAuth } from '../auth/AuthContext';
+
+function NavLink({ children, ...props }: ComponentProps<typeof RouterNavLink>) {
+  const paths: Record<string, string> = {
+    '/admin': 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
+    '/admin/users':
+      'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m16-14a4 4 0 0 1 0 8M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
+    '/admin/reports': 'M4 3h16v18H4zM8 16v-3m4 3V7m4 9v-5',
+    '/leaderboard':
+      'M8 3h8v6a4 4 0 0 1-8 0V3Zm0 2H4v3a4 4 0 0 0 4 4m8-7h4v3a4 4 0 0 1-4 4M12 13v8m-4 0h8',
+  };
+  const path =
+    paths[String(props.to)] ??
+    (String(props.to).includes('leaderboard')
+      ? paths['/leaderboard']
+      : 'M5 4h14v16H5zM8 8h8m-8 4h8m-8 4h5');
+  return (
+    <RouterNavLink {...props}>
+      <svg
+        aria-hidden="true"
+        className="mr-2 h-[18px] w-[18px] shrink-0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.65"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d={path} />
+      </svg>
+      {typeof children === 'function' ? undefined : children}
+    </RouterNavLink>
+  );
+}
 
 export function BrandMark() {
   return (
@@ -50,7 +83,7 @@ export function AppLayout() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="app-shell flex min-h-screen flex-col">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-xl focus:bg-ischool-blue focus:px-4 focus:py-3 focus:text-white"
@@ -109,8 +142,8 @@ export function AppLayout() {
                 <NavLink to="/judge" className={navClass}>
                   My teams
                 </NavLink>
-                <NavLink to="/admin/status" className={navClass}>
-                  System status
+                <NavLink to="/admin/settings" className={navClass}>
+                  Settings
                 </NavLink>
               </>
             )}
@@ -141,13 +174,6 @@ export function AppLayout() {
       >
         <Outlet />
       </main>
-
-      <footer className="border-t border-black/5 bg-white">
-        <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-2 px-4 py-4 text-xs text-muted sm:flex-row sm:px-6">
-          <span>iSchool × Al Ahly Club Judging Platform</span>
-          <span>Runs locally — no data leaves this computer</span>
-        </div>
-      </footer>
     </div>
   );
 }

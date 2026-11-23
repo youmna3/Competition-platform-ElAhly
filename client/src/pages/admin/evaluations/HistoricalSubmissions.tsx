@@ -42,10 +42,7 @@ export function HistoricalSubmissions() {
               <ul className="space-y-2">
                 {query.data.evaluations.map((e) => (
                   <li key={e.id}>
-                    <Link
-                      className="text-sm font-semibold text-ischool-blue-dark hover:underline"
-                      to={`/admin/evaluations/${e.id}`}
-                    >
+                    <Link className="secondary-link" to={`/admin/evaluations/${e.id}`}>
                       {e.teamCode} · {e.teamName} · {e.judgeName}
                     </Link>
                   </li>

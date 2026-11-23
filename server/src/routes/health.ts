@@ -6,9 +6,15 @@ export interface HealthDeps {
   checkDatabase: () => Promise<DatabaseHealth>;
   environment: string;
   version: string;
+  detailed?: boolean;
 }
 
-export function healthRouter({ checkDatabase, environment, version }: HealthDeps): Router {
+export function healthRouter({
+  checkDatabase,
+  environment,
+  version,
+  detailed = false,
+}: HealthDeps): Router {
   const router = Router();
 
   router.get('/', async (_req, res) => {
@@ -25,7 +31,9 @@ export function healthRouter({ checkDatabase, environment, version }: HealthDeps
       time: new Date().toISOString(),
     };
     res.set('Cache-Control', 'no-store');
-    res.status(database.status === 'ok' ? 200 : 503).json(body);
+    res
+      .status(database.status === 'ok' ? 200 : 503)
+      .json(detailed ? body : { status: body.status, time: body.time });
   });
 
   return router;

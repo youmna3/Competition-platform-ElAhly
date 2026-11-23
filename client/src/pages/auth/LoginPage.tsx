@@ -8,15 +8,7 @@ import { FullPageSpinner } from '../../components/FullPageSpinner';
 
 function BrandPanel() {
   return (
-    <div className="relative hidden overflow-hidden bg-ink text-white lg:flex lg:w-[46%] lg:flex-col lg:justify-between lg:p-12">
-      <div
-        aria-hidden
-        className="absolute inset-0 bg-gradient-to-br from-ischool-blue/90 via-ischool-blue-dark/60 to-transparent"
-      />
-      <div
-        aria-hidden
-        className="absolute -right-24 -bottom-24 h-96 w-96 rounded-full border-[40px] border-ahly-gold/15"
-      />
+    <div className="relative hidden overflow-hidden bg-ischool-blue-dark text-white lg:flex lg:w-[46%] lg:flex-col lg:justify-between lg:p-12">
       <div className="relative flex items-center gap-4 self-start rounded-2xl bg-white px-5 py-3 shadow-lg">
         <img
           src="/brand/ischool-logo.svg"
@@ -37,16 +29,15 @@ function BrandPanel() {
         />
       </div>
       <div className="relative max-w-md space-y-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-ahly-gold">
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/90">
           iSchool × Al Ahly Club
         </p>
         <h1 className="text-4xl leading-tight font-bold">Competition Judging Platform</h1>
-        <p className="text-base text-white/75">
+        <p className="text-base text-white/90">
           Fair, consistent scoring for every team. Sign in with the account provided by the
           competition administrator.
         </p>
       </div>
-      <p className="relative text-xs text-white/55">Runs locally — no data leaves this computer.</p>
     </div>
   );
 }

@@ -26,16 +26,8 @@ describe('GET /api/health', () => {
     expect(res.status).toBe(200);
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.body.status).toBe('ok');
-    expect(res.body.app).toMatchObject({
-      name: 'iSchool × Al Ahly Judging Platform',
-      version: '0.1.0-test',
-    });
-    expect(res.body.database).toEqual({
-      status: 'ok',
-      serverVersion: '10.4.32-MariaDB',
-      database: 'judging_platform',
-      latencyMs: 1.2,
-    });
+    expect(res.body.app).toBeUndefined();
+    expect(res.body.database).toBeUndefined();
     expect(new Date(res.body.time).toString()).not.toBe('Invalid Date');
   });
 
@@ -51,7 +43,8 @@ describe('GET /api/health', () => {
 
     expect(res.status).toBe(503);
     expect(res.body.status).toBe('degraded');
-    expect(res.body.database.code).toBe('ECONNREFUSED');
+    expect(res.body.database).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain('ECONNREFUSED');
   });
 
   it('sets security headers and hides the framework', async () => {

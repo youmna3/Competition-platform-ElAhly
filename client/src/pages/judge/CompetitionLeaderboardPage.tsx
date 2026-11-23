@@ -1,3 +1,4 @@
+import { TopTeams } from '../../components/TopTeams';
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
@@ -157,6 +158,7 @@ export function CompetitionLeaderboardPage() {
               </Card>
             ) : (
               <>
+                {data.official.available && <TopTeams teams={teams} />}
                 <section className="space-y-4" aria-labelledby="competition-ranking">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <h2 id="competition-ranking" className="text-lg font-bold">
@@ -227,10 +229,9 @@ export function CompetitionLeaderboardPage() {
                                 <td className="px-5 py-5 text-xl font-bold tabular-nums">
                                   {formatScore(t.score)} / {t.maximumScore ?? 100}
                                   <span className="block text-xs font-normal text-muted">
-                                    Base {formatScore(t.baseAverage ?? t.score)} + Bonus{' '}
+                                    Base {formatScore(t.baseAverage ?? t.score)} · Bonus +{' '}
                                     {formatScore(t.bonusAverage ?? 0)}
                                   </span>
-                                  <span className="ml-1 text-xs font-normal text-muted">/ 100</span>
                                 </td>
                               </tr>
                             ))}
@@ -253,12 +254,9 @@ export function CompetitionLeaderboardPage() {
                               <p className="border-t border-line pt-3 text-2xl font-bold text-ischool-blue-dark tabular-nums">
                                 {formatScore(t.score)} / {t.maximumScore ?? 100}
                                 <span className="block text-xs font-normal text-muted">
-                                  Base {formatScore(t.baseAverage ?? t.score)} + Bonus{' '}
+                                  Base {formatScore(t.baseAverage ?? t.score)} · Bonus +{' '}
                                   {formatScore(t.bonusAverage ?? 0)}
                                 </span>{' '}
-                                <span className="text-xs font-normal text-muted">
-                                  final average / 100
-                                </span>
                               </p>
                             </Card>
                           </li>

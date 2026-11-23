@@ -20,7 +20,7 @@ export function Alert({
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
-      className={`rounded-xl border px-4 py-3 text-sm ${styles}`}
+      className={`ui-alert rounded-xl border px-4 py-3 text-sm ${styles}`}
     >
       {title && <p className="font-semibold">{title}</p>}
       {children && <div className={title ? 'mt-1' : ''}>{children}</div>}
@@ -47,7 +47,7 @@ export function Button({
   }[variant];
   return (
     <button
-      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${styles} ${className}`}
+      className={`ui-button inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${styles} ${className}`}
       {...props}
     />
   );
@@ -123,7 +123,7 @@ export function PasswordField({
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <div
-      className={`min-w-0 rounded-2xl border border-line/80 bg-white p-5 shadow-card sm:p-6 ${className}`}
+      className={`ui-card min-w-0 rounded-2xl border border-line/80 bg-white p-5 shadow-card sm:p-6 ${className}`}
     >
       {children}
     </div>

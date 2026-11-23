@@ -24,7 +24,9 @@ export function ViewRubricPage() {
         <div>
           <p className="eyebrow">Judging rubric</p>
           <h1 className="sr-only">Judging rubric</h1>
-          <p className="text-sm text-black/60">Read-only. Every team is judged with this rubric.</p>
+          <p className="text-sm text-black/60">
+            Active for new evaluations. Existing evaluations retain their original rubric versions.
+          </p>
         </div>
         {user?.role === 'admin' && (
           <Link

@@ -252,6 +252,9 @@ describe('access and validation', () => {
         projectName: 'Irrigation',
         rank: 1,
         score: 85,
+        baseAverage: 85,
+        bonusAverage: 0,
+        maximumScore: 100,
         rubricVersionNo: 1,
       },
     ]);

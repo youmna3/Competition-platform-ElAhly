@@ -1,4 +1,5 @@
 import { Route, Routes } from 'react-router';
+import { ReportsPage } from './pages/admin/reports/ReportsPage';
 import { AppLayout } from './components/AppLayout';
 import { HomeRedirect, RequireAuth } from './auth/RequireAuth';
 import { LoginPage } from './pages/auth/LoginPage';
@@ -31,6 +32,14 @@ export default function App() {
         }
       >
         <Route path="/change-password" element={<ChangePasswordPage />} />
+        <Route
+          path="/admin/reports"
+          element={
+            <RequireAuth roles={['admin']}>
+              <ReportsPage />
+            </RequireAuth>
+          }
+        />
         <Route
           path="/leaderboard"
           element={

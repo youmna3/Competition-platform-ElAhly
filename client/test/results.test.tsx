@@ -170,8 +170,8 @@ describe('leaderboard', () => {
       '1Tied',
       '3',
     ]);
-    expect(within(rows[2]!).getByText('80.33')).toBeInTheDocument();
-    expect(within(rows[0]!).getByText('85.00')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText('80.33 / 100')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText('85.00 / 100')).toBeInTheDocument();
     expect(screen.getByText(/administrators only · not public/)).toBeInTheDocument();
   });
 
@@ -212,7 +212,7 @@ describe('leaderboard', () => {
     expect(
       screen.getByRole('table', { name: /Provisional ranking, rubric version 2/ }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/Provisional average \/ 100/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Provisional combined average/).length).toBeGreaterThan(0);
   });
 
   it('sends search and sort to the server and refreshes on demand', async () => {
@@ -307,7 +307,7 @@ describe('authenticated competition leaderboard', () => {
     const table = await screen.findByRole('table', { name: 'Official ranking' });
     expect(within(table).getAllByRole('row')).toHaveLength(4);
     expect(within(table).getAllByText('Tied')).toHaveLength(2);
-    expect(within(table).getByText('80.33')).toBeInTheDocument();
+    expect(within(table).getByText('80.33 / 100')).toBeInTheDocument();
     expect(screen.queryByText('Judge One:')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Detailed results' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Team AHL-1' })).not.toBeInTheDocument();

@@ -52,6 +52,8 @@ describe('scoring', () => {
     ]);
     expect(partial.sections.map((s) => s.score)).toEqual([27, null, 20, null]);
     expect(partial.total).toBeNull();
+    expect(partial.base).toBe(47);
+    expect(partial.bonus).toBe(0);
   });
 
   it('avoids floating-point drift and formats nicely', () => {

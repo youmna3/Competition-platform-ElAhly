@@ -5,6 +5,7 @@ import type { RubricContent, RubricIssue } from '@judging/shared';
  * empty while typing) and gives every row a stable key for React.
  */
 export interface EditCriterion {
+  id?: number;
   key: string;
   title: string;
   description: string;
@@ -12,6 +13,9 @@ export interface EditCriterion {
 }
 
 export interface EditSection {
+  id?: number;
+  type: 'actual' | 'bonus';
+  maxBonusPoints: string;
   key: string;
   title: string;
   description: string;
@@ -20,6 +24,7 @@ export interface EditSection {
 }
 
 export interface EditRubric {
+  scoringFormat?: 1 | 2;
   title: string;
   description: string;
   instructions: string;
@@ -31,16 +36,21 @@ export const newKey = () => `k${++counter}`;
 
 export function toEdit(c: RubricContent): EditRubric {
   return {
+    scoringFormat: c.scoringFormat ?? 1,
     title: c.title,
     description: c.description,
     instructions: c.instructions,
     sections: c.sections.map((s) => ({
       key: newKey(),
+      id: s.id,
+      type: s.type ?? 'actual',
+      maxBonusPoints: s.maxBonusPoints == null ? '' : String(s.maxBonusPoints),
       title: s.title,
       description: s.description,
       weightPercent: s.weightPercent == null ? '' : String(s.weightPercent),
       criteria: s.criteria.map((cr) => ({
         key: newKey(),
+        id: cr.id,
         title: cr.title,
         description: cr.description,
         guidelines: cr.guidelines,
@@ -51,15 +61,22 @@ export function toEdit(c: RubricContent): EditRubric {
 
 export function toContent(e: EditRubric): RubricContent {
   return {
+    scoringFormat: e.scoringFormat ?? 1,
     title: e.title,
     description: e.description,
     instructions: e.instructions,
     sections: e.sections.map((s) => ({
+      id: s.id,
+      type: s.type,
+      maxBonusPoints:
+        s.type === 'bonus' && s.maxBonusPoints.trim() ? Number(s.maxBonusPoints) : null,
       title: s.title,
       description: s.description,
       // Empty means "not set yet"; anything else is checked by validateRubric.
-      weightPercent: s.weightPercent.trim() === '' ? null : Number(s.weightPercent),
+      weightPercent:
+        s.type === 'bonus' ? null : s.weightPercent.trim() === '' ? null : Number(s.weightPercent),
       criteria: s.criteria.map((c) => ({
+        id: c.id,
         title: c.title,
         description: c.description,
         guidelines: c.guidelines,

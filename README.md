@@ -2,7 +2,7 @@
 
 A local judging application using React, Express and MySQL/MariaDB. Phases 0-8,
 UI improvements, authenticated judge leaderboards and administrator submission
-corrections are implemented. Phase 9 and Phase 10 have not been started.
+corrections, versioned Actual/Bonus rubrics and Phase 9 administrator reports are implemented. Phase 10 has not been started.
 
 ## Repository and workspaces
 
@@ -105,10 +105,17 @@ monitor judge progress and inspect detailed results. Admins assigned to teams al
 use My Teams under the same judging rules. Judges see only their assigned teams,
 the published rubric and the read-only competition leaderboard.
 
-- The rubric has **4 sections x 2 criteria**, eight ratings of **1-5 stars** and section
-  weights totalling 100%. Gold stars and blue interactive controls are preserved.
-- Section score = average of its two ratings / 5 x section weight. The final score
-  is the sum of the four section scores. The backend validates and recalculates it.
+- Legacy rubric versions retain four Actual sections and eight required 1-5 star ratings.
+- New drafts support 1-10 sections, with two 1-5 star criteria per section. Actual
+  weights are whole percentages totalling exactly 100%; publishing is blocked otherwise.
+- Each Bonus section explicitly configures 1-100 maximum whole points. Bonus does
+  not consume Actual weight and is added above 100 without a silent cap.
+- Section points = (rating 1 + rating 2) / 10 x Actual weight or Bonus maximum.
+  Example: base 85/100 + Bonus ratings 3 and 4 with maximum 10 gives +7/10,
+  combined 92/110. All fives gives 110/110. Backend calculations are authoritative.
+- Bonus is optional (approved policy for new versions): leave both ratings blank
+  for zero; if started, both must be rated before submission. Skip bonus clears
+  both ratings. Actual ratings remain required. Existing versions are not rescored.
 - Drafts autosave. Submission locks judge editing. An admin can formally reopen an
   evaluation for the judge to edit and resubmit, retaining its original rubric.
 - Teams are archived instead of deleted. Removed assignments retain past evaluations.
@@ -132,11 +139,69 @@ requires authentication and excludes individual judge ratings, notes and history
 Search, sort and refresh are supported. Dashboard and leaderboards compute from the
 stored ratings and refresh periodically; corrections invalidate the open client's caches.
 
+### Rubric versions, restoration and new sections
+
+Rubric Management shows **Rubric Version History**, publication dates, previews,
+and the version **active for NEW evaluations**. A version with zero evaluations
+is still preserved. Normal evaluation details are read-only until Edit Submission.
+
+To restore version 1 while version 2 remains active, choose **Restore as New Draft**
+beside version 1. Finish or discard an existing draft first. Review the copied
+content, descriptions, guidelines, weights and Bonus settings, then save and publish.
+Publication creates a NEW immutable version; it never overwrites an earlier one or
+moves evaluations. Existing draft and submitted evaluations keep their pinned version.
+
+In an unpublished draft choose **Add section**, then **Actual** or **Bonus**.
+Each new section has two criteria. Add a fifth Actual section by adjusting all
+Actual weights back to 100%; the editor shows remaining/excess weight. Configure
+Bonus maximum points separately. Sections can be removed or their type changed
+in a draft. Existing section/criterion database IDs survive draft saves. Restored
+copies receive new IDs in their new version. Mixed-version ranking checks remain.
+Migration 011 adds versioned scoring metadata and publication guards; migrations
+001-010 and existing evaluations are unchanged. Always back up before migrating.
+
+### Administrator reports (Phase 9)
+
+Open **Reports** in the administrator navigation. Choose a report, optional filters,
+and **Download Excel (.xlsx)**. Workbooks include generation timestamps and filters.
+**Download CSV** exports the selected normalized sheet, with metadata on every row.
+
+| Report                       | Sheets / contents                                                                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Competition Results          | Official ranks, team/project, assigned judges, submissions, base/Bonus/combined averages, maximum, completion, version and eligibility |
+| Individual Judge Evaluations | Evaluation summaries, section scores/notes and criterion stars/notes in separate sheets; includes historical/unassigned records        |
+| Judging Progress             | Active team completion and blockers, judge workload (including zero workload), archived team assignments/status                        |
+| Admin Corrections            | Full history, administrator/reason/time, normalized Before/After details and complete immutable snapshot JSON                          |
+| Rubric History               | Every version, publication/active status, section types/weights/Bonus limits, criteria, descriptions and guidelines                    |
+
+Results use the same backend eligibility and exact ranking as the leaderboard;
+filtering does not recompute official ranks or remove a judge from a team average.
+Teams from incompatible versions are provisional with blank official ranks.
+Historical/unassigned evaluations never automatically enter official results.
+Date filters apply to submission time or correction time as labelled; input is local
+browser time and exported timestamps are UTC. Numeric team IDs are record IDs from
+team-page URLs. CSV sheet selection preserves all normalized data across downloads.
+
+Excel cells are literal strings or numeric values (never formulas/macros). CSV
+quotes text and prefixes dangerous formula-leading strings with an apostrophe.
+Long correction JSON is split into numbered 30,000-character chunks: concatenate
+chunks for the same event and Before/After side in order to reconstruct it exactly.
+No correction snapshots are silently truncated or omitted.
+
+Exports are admin-only, read-only consistent database snapshots. One export runs
+at a time. Safety limits: 2,500 evaluations/correction events per export, 5,000 total
+teams, 32 MB of cell text, 1 million cells, and 100,000 rows per Excel sheet. Narrow
+filters when a limit is reached; the server rejects the export instead of dropping
+records. XLSX uses built-in Node compression and OOXML; no new runtime dependency.
+Bulk judge import is not implemented: available repository documentation and the
+provided previous UI request do not establish it as agreed Phase 9 scope. Existing
+single-user management and team import remain available.
+
 ### Administrator submission corrections
 
 Open Evaluations, select a submitted evaluation, then **Edit Submission**.
 Admins may correct another judge's submission or their own, without assignment or
-reopening. All eight ratings, criterion notes, section notes and overall comments
+reopening. All ratings in the original rubric, criterion notes, section notes and overall comments
 are editable using the original rubric. Status stays Submitted.
 
 1. Change values and enter a reason of 5-500 characters.
@@ -225,7 +290,7 @@ Outputs under ignored `artifacts/`:
 The packager uses explicit source/configuration allowlists, sorted paths and fixed ZIP
 timestamps. Identical source produces identical ZIP bytes with the same Node runtime.
 It includes source from all workspaces, manifests, the lockfile, assets, import/test
-fixtures, migrations 001-010, tests, the safe environment example and Markdown docs.
+fixtures, migrations 001-011, tests, the safe environment example and Markdown docs.
 It checks required files even when they have not yet been added to Git.
 
 Real environment files, backups, Git metadata, dependencies, build output, screenshots,
@@ -260,5 +325,5 @@ copy with development dependencies for migrations, backup and recovery. A runtim
 `npm ci --omit=dev` installation does not provide those tools.
 
 Defaults bind to loopback and plain local HTTP. This cleanup does not enable public
-hosting, network exposure or Phase 9/10 features. Keep the existing restricted runtime
+hosting, network exposure or Phase 10 features. Keep the existing restricted runtime
 DB account and filesystem protection for environment/backup files.

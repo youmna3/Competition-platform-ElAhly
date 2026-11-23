@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   scoreEvaluation,
   formatScore,
+  maximumScore,
   type AdminEvaluationDetail,
   type SubmissionSnapshot,
 } from '@judging/shared';
@@ -20,6 +21,18 @@ export function SubmissionComparison({
 }) {
   const rows: [string, string, string, string][] = [
     ['total', 'Final score', formatScore(before.totalScore), formatScore(after.totalScore)],
+    [
+      'base',
+      'Base score',
+      formatScore(before.baseScore ?? before.totalScore),
+      formatScore(after.baseScore ?? after.totalScore),
+    ],
+    [
+      'bonus',
+      'Bonus score',
+      formatScore(before.bonusScore ?? 0),
+      formatScore(after.bonusScore ?? 0),
+    ],
     ...after.sections.flatMap((s): [string, string, string, string][] => {
       const old = before.sections.find((x) => x.sectionId === s.sectionId);
       return [
@@ -38,8 +51,8 @@ export function SubmissionComparison({
         [
           `criterion-${r.criterionId}-rating`,
           `${r.title} stars`,
-          String(old?.rating),
-          String(r.rating),
+          old?.rating == null ? 'Not rated' : String(old.rating),
+          r.rating == null ? 'Not rated' : String(r.rating),
         ],
         [`criterion-${r.criterionId}-notes`, `${r.title} notes`, old?.note ?? '', r.note],
       ];
@@ -103,6 +116,9 @@ export function EditSubmission({
     );
     return {
       totalScore: scores.total ?? 0,
+      baseScore: scores.base ?? 0,
+      bonusScore: scores.bonus ?? 0,
+      maximumScore: scores.maximum,
       overallNotes: value.overallNotes,
       sections: rubric.sections.map((s, i) => ({
         sectionId: s.id,
@@ -116,7 +132,7 @@ export function EditSubmission({
           criterionId: c.id,
           sectionId: s.id,
           title: c.title,
-          rating: value.ratings.find((r) => r.criterionId === c.id)?.rating ?? 0,
+          rating: value.ratings.find((r) => r.criterionId === c.id)?.rating ?? null,
           note: value.ratings.find((r) => r.criterionId === c.id)?.note ?? '',
         })),
       ),
@@ -125,12 +141,21 @@ export function EditSubmission({
   const before = {
     ...snapshot(inputOf(baseline.evaluation)),
     totalScore: baseline.evaluation.totalScore,
+    baseScore: baseline.evaluation.baseScore,
+    bonusScore: baseline.evaluation.bonusScore,
     sections: snapshot(inputOf(baseline.evaluation)).sections.map((s, i) => ({
       ...s,
       score: baseline.sectionScores[i] ?? s.score,
     })),
   };
   const after = snapshot(input);
+  const complete =
+    scoreEvaluation(
+      rubric.sections,
+      rubric.sections.map((s) =>
+        s.criteria.map((c) => input.ratings.find((r) => r.criterionId === c.id)?.rating ?? null),
+      ),
+    ).total != null;
   async function reload(keepChanges: boolean) {
     setBusy(true);
     setError(null);
@@ -203,7 +228,7 @@ export function EditSubmission({
             </>
           ) : (
             <Button
-              disabled={reason.trim().length < 5 || reason.trim().length > 500}
+              disabled={!complete || reason.trim().length < 5 || reason.trim().length > 500}
               onClick={() => setConfirm(true)}
             >
               Review changes
@@ -233,8 +258,15 @@ export function EditSubmission({
         </Alert>
       )}
       <p className="font-semibold text-ischool-blue-dark">
-        Final score: {formatScore(after.totalScore)} / 100
+        Final score: {complete ? formatScore(after.totalScore) : 'Incomplete'} /{' '}
+        {maximumScore(rubric.sections)}
       </p>
+      {!complete && (
+        <Alert tone="warning">
+          Complete all Actual ratings and both criteria in any Bonus section you start, or choose
+          Skip bonus.
+        </Alert>
+      )}
       {confirm ? (
         <>
           <Alert tone="info">

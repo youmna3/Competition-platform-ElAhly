@@ -105,10 +105,15 @@ export interface AdminEvaluationDetail {
 }
 
 export interface SubmissionSnapshot {
+  baseScore?: number;
+  bonusScore?: number;
+  maximumScore?: number;
   totalScore: number;
   sections: {
     sectionId: number;
     title: string;
+    type?: 'actual' | 'bonus';
+    maxBonusPoints?: number | null;
     weightPercent: number;
     score: number;
     note: string;
@@ -117,7 +122,7 @@ export interface SubmissionSnapshot {
     criterionId: number;
     sectionId: number;
     title: string;
-    rating: number;
+    rating: number | null;
     note: string;
   }[];
   overallNotes: string;

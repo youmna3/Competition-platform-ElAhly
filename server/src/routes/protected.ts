@@ -9,11 +9,13 @@ import { getPublishedRubric } from '../rubric/service.js';
 import { evaluationsRouter } from '../evaluations/routes.js';
 import { reviewRouter } from '../review/routes.js';
 import { judgeLeaderboardRouter, resultsRouter } from '../results/routes.js';
+import { reportsRouter } from '../reports/routes.js';
 
 /** GET /api/admin/* — administrators only. */
 export function adminRouter(pool: Pool): Router {
   const router = Router();
   router.use(requireAuth, requireRole('admin'));
+  router.use('/reports', reportsRouter(pool));
   router.use('/users', usersRouter(pool));
   router.use('/rubric', rubricAdminRouter(pool));
   router.use('/', resultsRouter(pool));
@@ -68,7 +70,7 @@ export function judgeRouter(pool: Pool): Router {
     try {
       const [rows] = await pool.query<RowDataPacket[]>(
         `SELECT t.id, t.team_code, t.name, t.project_name, tj.assigned_at, e.status AS evaluation_status,
-                e.required_scored, e.total_score, e.submitted_at, v.version_no,
+                e.required_scored, e.required_count, e.total_score, e.submitted_at, v.version_no,
                 e.reopen_notice_pending, e.reopen_reason,
                 (e.rubric_version_id <> r.published_version_id) AS outdated
          FROM team_judges tj
@@ -90,7 +92,7 @@ export function judgeRouter(pool: Pool): Router {
           ? (r.evaluation_status as 'draft' | 'submitted')
           : 'not_started',
         ratedCount: Number(r.required_scored ?? 0),
-        requiredCount: 8,
+        requiredCount: Number(r.required_count ?? 0),
         totalScore: r.evaluation_status === 'submitted' ? Number(r.total_score) : null,
         submittedAt: r.submitted_at ? new Date(r.submitted_at).toISOString() : null,
         rubricVersionNo: r.version_no == null ? null : Number(r.version_no),

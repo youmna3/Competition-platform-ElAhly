@@ -183,7 +183,7 @@ export function TeamDetailsPage() {
             <dd className="mt-1 text-lg font-bold tabular-nums">
               {team.provisionalAverage != null ? formatScore(team.provisionalAverage) : '—'}
               {team.provisionalAverage != null && (
-                <span className="text-sm font-normal text-muted"> / 100</span>
+                <span className="text-sm font-normal text-muted"> combined points</span>
               )}
             </dd>
             <dd className="text-xs text-muted">
@@ -277,9 +277,9 @@ export function TeamDetailsPage() {
                     )}
                     <p className="mt-1 text-xs text-black/60 tabular-nums">
                       {a.evaluationStatus === 'submitted' && a.totalScore != null
-                        ? `Score ${formatScore(a.totalScore)} / 100`
+                        ? `Score ${formatScore(a.totalScore)} combined points`
                         : a.evaluationStatus === 'draft'
-                          ? `${a.ratedCount}/8 rated`
+                          ? `${a.ratedCount} required rated`
                           : ''}
                     </p>
                     {a.submittedAt && (
@@ -340,7 +340,8 @@ export function TeamDetailsPage() {
                     </Badge>
                     <p className="mt-1 text-xs text-black/60">
                       Rubric v{p.rubricVersionNo}
-                      {p.totalScore != null && ` · score ${formatScore(p.totalScore)} / 100`}
+                      {p.totalScore != null &&
+                        ` · score ${formatScore(p.totalScore)} combined points`}
                     </p>
                     <Link
                       to={`/admin/evaluations/${p.evaluationId}`}

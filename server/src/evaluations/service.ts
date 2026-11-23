@@ -2,7 +2,7 @@ import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql
 import {
   EVALUATION_ERRORS,
   EVALUATION_LIMITS,
-  RUBRIC_SHAPE,
+  maximumScore,
   isStarRating,
   scoreEvaluation,
   type EvaluationDetail,
@@ -22,7 +22,18 @@ import { inTransaction, type Actor } from '../teams/service.js';
 type Db = Pool | PoolConnection;
 
 const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
-const REQUIRED = RUBRIC_SHAPE.sections * RUBRIC_SHAPE.criteriaPerSection;
+const requiredCount = (r: RubricVersion) =>
+  r.sections.filter((s) => s.type !== 'bonus').reduce((n, s) => n + s.criteria.length, 0);
+export const missingRequiredRatings = (
+  rubric: RubricVersion,
+  ratings: Map<number, number | null>,
+) =>
+  rubric.sections.flatMap((s) => {
+    const values = s.criteria.map((c) => ratings.get(c.id) ?? null);
+    return s.type === 'bonus' && values.every((v) => v == null)
+      ? []
+      : s.criteria.filter((c) => ratings.get(c.id) == null).map((c) => c.id);
+  });
 
 const notFound = () =>
   new RuleError(404, EVALUATION_ERRORS.NOT_ASSIGNED, 'This team is not assigned to you.');
@@ -106,6 +117,9 @@ export async function loadEvaluation(db: Db, id: number): Promise<EvaluationDeta
     status: e.status as EvaluationStatus,
     rowVersion: Number(e.row_version),
     totalScore: Number(e.total_score),
+    baseScore: Number(e.core_score),
+    bonusScore: Number(e.bonus_score),
+    maximumScore: maximumScore((await loadVersion(db, Number(e.rubric_version_id)))!.sections),
     ratedCount: Number(e.required_scored),
     requiredCount: Number(e.required_count),
     submittedAt: iso(e.submitted_at),
@@ -181,9 +195,22 @@ function computeScores(rubric: RubricVersion, ratingOf: Map<number, number | nul
   const matrix = rubric.sections.map((s) => s.criteria.map((c) => ratingOf.get(c.id) ?? null));
   const breakdown = scoreEvaluation(rubric.sections, matrix);
   const partial = breakdown.sections.reduce((sum, s) => sum + (s.score ?? 0), 0);
-  const ratedCount = matrix.flat().filter((r) => r != null).length;
+  const ratedCount = rubric.sections.reduce(
+    (n, s, i) => n + (s.type === 'bonus' ? 0 : matrix[i]!.filter((r) => r != null).length),
+    0,
+  );
+  const base = breakdown.sections.reduce(
+    (n, s, i) => n + (rubric.sections[i]!.type !== 'bonus' ? (s.score ?? 0) : 0),
+    0,
+  );
+  const bonus = breakdown.sections.reduce(
+    (n, s, i) => n + (rubric.sections[i]!.type === 'bonus' ? (s.score ?? 0) : 0),
+    0,
+  );
   return {
     total: breakdown.total ?? Math.round(partial * 1000) / 1000,
+    base,
+    bonus,
     complete: breakdown.total != null,
     ratedCount,
   };
@@ -236,8 +263,13 @@ export function snapshotOf(
   const breakdown = scoreEvaluation(rubric.sections, matrix);
   return {
     totalScore: total,
+    baseScore: breakdown.base ?? 0,
+    bonusScore: breakdown.bonus ?? 0,
+    maximumScore: breakdown.maximum,
     sections: rubric.sections.map((s, i) => ({
       sectionId: s.id,
+      type: s.type ?? 'actual',
+      maxBonusPoints: s.maxBonusPoints ?? null,
       title: s.title,
       weightPercent: s.weightPercent ?? 0,
       score: breakdown.sections[i]?.score ?? 0,
@@ -248,7 +280,7 @@ export function snapshotOf(
         criterionId: c.id,
         sectionId: s.id,
         title: c.title,
-        rating: byId.get(c.id)?.rating ?? 0,
+        rating: byId.get(c.id)?.rating ?? null,
         note: byId.get(c.id)?.note ?? '',
       })),
     ),
@@ -329,7 +361,7 @@ export function startEvaluation(pool: Pool, actor: Actor, teamId: number) {
     try {
       [insert] = await conn.query<ResultSetHeader>(
         'INSERT INTO evaluations (team_id, judge_id, rubric_version_id, required_count) VALUES (?, ?, ?, ?)',
-        [teamId, actor.id, publishedId, REQUIRED],
+        [teamId, actor.id, publishedId, requiredCount(rubric)],
       );
     } catch (e) {
       // Two tabs pressed Start at once: the unique key keeps a single evaluation.
@@ -416,7 +448,7 @@ export function saveEvaluation(
     const current = (await loadEvaluation(conn, id))!;
     const ratingOf = new Map(current.ratings.map((r) => [r.criterionId, r.rating]));
     for (const r of input.ratings) ratingOf.set(r.criterionId, r.rating);
-    const { total, ratedCount } = computeScores(rubric, ratingOf);
+    const { total, base, bonus, ratedCount } = computeScores(rubric, ratingOf);
 
     if (input.ratings.length) {
       await conn.query(
@@ -433,10 +465,10 @@ export function saveEvaluation(
       );
     }
     await conn.query(
-      `UPDATE evaluations SET core_score = ?, bonus_score = 0, total_score = ?, required_scored = ?,
+      `UPDATE evaluations SET core_score = ?, bonus_score = ?, total_score = ?, required_scored = ?,
          required_count = ?, overall_notes = ?, row_version = row_version + 1,
          save_count = save_count + 1, last_saved_at = NOW() WHERE id = ?`,
-      [total, total, ratedCount, REQUIRED, input.overallNotes || null, id],
+      [base, bonus, total, ratedCount, requiredCount(rubric), input.overallNotes || null, id],
     );
     // A draft revision in the history, at most every few minutes.
     const [recent] = await conn.query<RowDataPacket[]>(
@@ -481,24 +513,24 @@ export function submitEvaluation(
     const rubric = (await loadVersion(conn, Number(row.rubric_version_id)))!;
     const current = (await loadEvaluation(conn, id))!;
     const ratingOf = new Map(current.ratings.map((r) => [r.criterionId, r.rating]));
-    const missing = current.ratings.filter((r) => r.rating == null).map((r) => r.criterionId);
+    const missing = missingRequiredRatings(rubric, ratingOf);
     if (missing.length) {
       throw new RuleError(
         400,
         EVALUATION_ERRORS.EVALUATION_INCOMPLETE,
-        `Rate all ${REQUIRED} criteria before submitting (${missing.length} still missing).`,
+        `Rate all ${requiredCount(rubric)} required criteria before submitting (${missing.length} still missing).`,
         { missingCriteria: missing },
       );
     }
-    const { total, complete, ratedCount } = computeScores(rubric, ratingOf);
+    const { total, base, bonus, complete, ratedCount } = computeScores(rubric, ratingOf);
     if (!complete) throw new Error('Scoring incomplete after validation');
 
     await conn.query(
-      `UPDATE evaluations SET status = 'submitted', submitted_at = NOW(), core_score = ?, bonus_score = 0,
+      `UPDATE evaluations SET status = 'submitted', submitted_at = NOW(), core_score = ?, bonus_score = ?,
          total_score = ?, required_scored = ?, required_count = ?, row_version = row_version + 1,
          reopen_notice_pending = FALSE
        WHERE id = ? AND status = 'draft'`,
-      [total, total, ratedCount, REQUIRED, id],
+      [base, bonus, total, ratedCount, requiredCount(rubric), id],
     );
     const resubmission = current.reopenedCount > 0;
     const [previous] = await conn.query<RowDataPacket[]>(

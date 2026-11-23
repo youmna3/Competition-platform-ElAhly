@@ -5,6 +5,7 @@ import {
   EVALUATION_PROGRESS_LABELS,
   REOPEN_REASON,
   formatScore,
+  maximumScore,
   type AdminEvaluationDetail,
   type EvaluationEvent,
   type EvaluationHistoryResponse,
@@ -46,12 +47,13 @@ function HistoryItem({ e }: { e: EvaluationEvent }) {
       <div className="mt-1 space-y-1 text-sm">
         {e.event === 'draft_saved' && (
           <p className="text-black/65">
-            {e.ratedCount}/8 rated{e.totalScore != null && ` · ${formatScore(e.totalScore)} so far`}
+            {e.ratedCount} required rated
+            {e.totalScore != null && ` · ${formatScore(e.totalScore)} so far`}
           </p>
         )}
         {(e.event === 'submitted' || e.event === 'resubmitted') && e.totalScore != null && (
           <p>
-            Score <strong>{formatScore(e.totalScore)}</strong> / 100
+            Score <strong>{formatScore(e.totalScore)}</strong> / {e.snapshot?.maximumScore ?? 100}
             {e.previousScore != null && (
               <span className="text-black/60">
                 {' '}
@@ -105,12 +107,19 @@ function HistoryItem({ e }: { e: EvaluationEvent }) {
                     {e.snapshot.sections.map((s) => (
                       <tr key={s.sectionId}>
                         <th scope="row" className="py-1 text-left font-semibold">
-                          {s.title} ({s.weightPercent}%)
+                          {s.title} (
+                          {s.type === 'bonus'
+                            ? `Bonus +${s.maxBonusPoints} max`
+                            : `${s.weightPercent}%`}
+                          )
                         </th>
                         <td className="py-1 text-black/70">
                           {e
                             .snapshot!.ratings.filter((r) => r.sectionId === s.sectionId)
-                            .map((r) => `${r.title}: ${r.rating}★`)
+                            .map(
+                              (r) =>
+                                `${r.title}: ${r.rating == null ? 'Not rated' : `${r.rating}★`}`,
+                            )
                             .join(' · ')}
                         </td>
                         <td className="py-1 text-right tabular-nums">{formatScore(s.score)}</td>
@@ -330,7 +339,7 @@ export function EvaluationReviewPage() {
       )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="eyebrow">Evaluation review · read-only</p>
+          <p className="eyebrow">Evaluation Details</p>
           <h1 className="text-2xl font-bold sm:text-3xl">
             {d.judge.fullName} → {d.team.teamCode}
           </h1>
@@ -396,7 +405,7 @@ export function EvaluationReviewPage() {
           <p className="mt-1 text-xs text-muted">
             {e.submittedAt
               ? `Submitted ${formatDateTime(e.submittedAt)}`
-              : `${e.ratedCount}/8 rated`}
+              : `${e.ratedCount}/{e.requiredCount} rated`}
           </p>
         </div>
       </Card>
@@ -404,12 +413,13 @@ export function EvaluationReviewPage() {
       <Card className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
         <div>
           <p className="text-xs font-semibold tracking-wide text-muted uppercase">
-            Rubric version {e.rubricVersionNo} weights
+            Rubric version {e.rubricVersionNo} section scores
           </p>
           <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
             {d.rubric.sections.map((s, i) => (
               <li key={s.id}>
-                {s.title} {s.weightPercent}% →{' '}
+                {s.title}{' '}
+                {s.type === 'bonus' ? `Bonus +${s.maxBonusPoints} max` : `${s.weightPercent}%`} →{' '}
                 <strong className="tabular-nums">
                   {d.sectionScores[i] != null ? formatScore(d.sectionScores[i]!) : '—'}
                 </strong>
@@ -429,7 +439,7 @@ export function EvaluationReviewPage() {
           <span className="text-3xl font-bold text-ischool-blue-dark tabular-nums">
             {formatScore(e.totalScore)}
           </span>
-          <span className="text-muted"> / 100</span>
+          <span className="text-muted"> / {maximumScore(d.rubric.sections)}</span>
         </p>
       </Card>
 

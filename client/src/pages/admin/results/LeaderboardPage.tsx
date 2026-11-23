@@ -99,7 +99,7 @@ function RankedTable({
             <tr>
               {SORTABLE.map((s) => header(s.field, s.label))}
               <th scope="col" className="px-4 py-3 text-right">
-                {provisional ? 'Provisional average' : 'Final average'} / 100
+                {provisional ? 'Provisional combined average' : 'Combined final average'}
               </th>
               <th scope="col" className="px-4 py-3">
                 Status
@@ -136,7 +136,11 @@ function RankedTable({
                   {t.submitted}/{t.assignedJudges}
                 </td>
                 <td className="px-4 py-3 text-right text-lg font-bold tabular-nums">
-                  {formatScore(t.score)}
+                  {formatScore(t.score)} / {t.maximumScore ?? 100}
+                  <span className="block text-xs font-normal text-muted">
+                    Base {formatScore(t.baseAverage ?? t.score)} + Bonus{' '}
+                    {formatScore(t.bonusAverage ?? 0)}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-col items-start gap-1">
@@ -167,7 +171,7 @@ function RankedTable({
                 <div className="text-right">
                   <p className="text-2xl font-bold tabular-nums">{formatScore(t.score)}</p>
                   <p className="text-xs text-muted">
-                    {provisional ? 'provisional' : 'final'} / 100
+                    {provisional ? 'provisional' : 'final'} / {t.maximumScore ?? 100}
                   </p>
                 </div>
               </div>

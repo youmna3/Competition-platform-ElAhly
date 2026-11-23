@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import {
   formatPoints,
+  maximumScore,
+  sectionMaximum,
   scoreEvaluation,
   sectionScore,
   totalWeight,
@@ -55,13 +57,16 @@ export function RubricView({
           </p>
           <p className="mt-1 text-sm text-black/70">
             {rubric.sections.length} sections · {rubric.sections.length * 2} criteria · each rated
-            1–5 stars · final score out of <strong>100</strong>
+            1–5 stars · final score out of <strong>{maximumScore(rubric.sections)}</strong>
           </p>
         </div>
         <ul className="space-y-1 text-sm text-black/70">
           <li>Section rating = average of the section’s two star ratings.</li>
           <li>Section score = section rating ÷ 5 × the section’s weight.</li>
-          <li>Final score = the four section scores added together.</li>
+          <li>
+            Combined score = all Actual section scores plus awarded Bonus points. Untouched Bonus
+            sections award zero; complete both criteria when started.
+          </li>
         </ul>
         {firstWeight != null && (
           <p className="rounded-xl bg-ahly-gold-light/50 px-3.5 py-2 text-sm text-amber-950">
@@ -123,8 +128,12 @@ export function RubricView({
                 )}
               </div>
               <div className="shrink-0 text-right">
-                {s.weightPercent != null ? (
-                  <Badge tone="red">{s.weightPercent}% of the final score</Badge>
+                {s.weightPercent != null || s.type === 'bonus' ? (
+                  <Badge tone="blue">
+                    {s.type === 'bonus'
+                      ? `Bonus +${s.maxBonusPoints} maximum`
+                      : `${s.weightPercent}% of base`}
+                  </Badge>
                 ) : (
                   <Badge tone="gray">Weight not set</Badge>
                 )}
@@ -132,7 +141,7 @@ export function RubricView({
                   <p className="mt-1 text-sm">
                     Section score{' '}
                     <strong>
-                      {formatPoints(part.score)} / {s.weightPercent}
+                      {formatPoints(part.score)} / {sectionMaximum(s)}
                     </strong>
                   </p>
                 )}
@@ -181,9 +190,9 @@ export function RubricView({
               Click the stars to try the scoring. Nothing is saved.
             </p>
           </div>
-          <p className="text-2xl font-bold text-ahly-red" aria-live="polite">
+          <p className="text-2xl font-bold text-ischool-blue-dark" aria-live="polite">
             {breakdown.total != null ? formatPoints(breakdown.total) : '—'}{' '}
-            <span className="text-base text-muted">/ 100</span>
+            <span className="text-base text-muted">/ {maximumScore(rubric.sections)}</span>
           </p>
         </Card>
       )}

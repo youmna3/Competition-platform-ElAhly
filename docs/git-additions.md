@@ -1,105 +1,79 @@
-# Proposed source-only Git additions
+# Source files to review for Git
 
-This is a review list, not a staging script. No files have been staged, committed,
-pushed or published as part of the cleanup. Preserve the existing UI, leaderboard
-and submission-correction work alongside the new safety fixes.
+No staging, commit, push or publication was performed by this task. Review these
+source changes together; the existing client, server and shared workspaces remain.
 
-## New required source files
+## New Phase 9 and rubric source files to add
 
-- `client/src/pages/admin/evaluations/EditSubmission.tsx`
-- `client/src/pages/admin/evaluations/HistoricalSubmissions.tsx`
-- `client/src/pages/judge/CompetitionLeaderboardPage.tsx`
-- `docs/git-additions.md`
-- `scripts/package-source.mjs`
-- `scripts/package-source.test.mjs`
-- `server/migrations/010_admin_corrections.sql`
-- `server/src/db/scratchName.ts`
-- `server/test/databaseSafety.test.ts`
-- `server/test/databaseSafety.ts`
-- `server/test/db/safety.db.test.ts`
-- `server/test/userConflict.test.ts`
+- `client/src/pages/admin/reports/ReportsPage.tsx`
+- `client/test/reports.test.tsx`
+- `server/migrations/011_dynamic_rubrics.sql`
+- `server/src/reports/format.ts`
+- `server/src/reports/routes.ts`
+- `server/src/reports/service.ts`
+- `server/test/db/dynamicRubric.db.test.ts`
+- `server/test/dynamicRubric.test.ts`
+- `server/test/reportFormat.test.ts`
+- `shared/src/reports.ts`
 
-The first four previously untracked implementation files (the editor, historical
-submission browser, judge leaderboard and migration 010) are required, not temporary
-artifacts. Migration 010 and all earlier migrations remain byte-for-byte unchanged.
+## Modified tracked files to review with them
 
-## Modified tracked files to review with the source changes
-
-- `.gitignore`
-- `.prettierignore`
 - `README.md`
-- `client/index.html`
 - `client/src/App.tsx`
 - `client/src/components/AppLayout.tsx`
-- `client/src/components/FullPageSpinner.tsx`
-- `client/src/components/HealthPanel.tsx`
-- `client/src/components/Modal.tsx`
-- `client/src/components/ui.tsx`
-- `client/src/index.css`
-- `client/src/pages/admin/AdminDashboardPage.tsx`
+- `client/src/pages/admin/evaluations/EditSubmission.tsx`
 - `client/src/pages/admin/evaluations/EvaluationReviewPage.tsx`
-- `client/src/pages/admin/evaluations/EvaluationsPage.tsx`
-- `client/src/pages/admin/evaluations/JudgeProgressPage.tsx`
 - `client/src/pages/admin/results/LeaderboardPage.tsx`
-- `client/src/pages/admin/results/charts.tsx`
 - `client/src/pages/admin/rubric/RubricEditor.tsx`
 - `client/src/pages/admin/rubric/RubricManagementPage.tsx`
+- `client/src/pages/admin/rubric/model.ts`
 - `client/src/pages/admin/teams/TeamDetailsPage.tsx`
-- `client/src/pages/admin/teams/TeamImportPage.tsx`
-- `client/src/pages/admin/teams/TeamsPage.tsx`
-- `client/src/pages/admin/teams/dialogs.tsx`
-- `client/src/pages/admin/users/UsersPage.tsx`
-- `client/src/pages/admin/users/dialogs.tsx`
-- `client/src/pages/auth/ChangePasswordPage.tsx`
-- `client/src/pages/auth/LoginPage.tsx`
+- `client/src/pages/judge/CompetitionLeaderboardPage.tsx`
 - `client/src/pages/judge/EvaluationPage.tsx`
-- `client/src/pages/judge/JudgeTeamsPage.tsx`
 - `client/src/pages/rubric/RubricView.tsx`
 - `client/src/pages/rubric/ViewRubricPage.tsx`
 - `client/test/results.test.tsx`
 - `client/test/review.test.tsx`
-- `client/test/teams.test.tsx`
-- `eslint.config.js`
-- `package.json`
-- `server/.env.example`
-- `server/scripts/db-restore-check.ts`
-- `server/src/evaluations/routes.ts`
+- `client/test/rubric.test.tsx`
+- `docs/git-additions.md`
+- `scripts/package-source.mjs`
 - `server/src/evaluations/service.ts`
-- `server/src/results/routes.ts`
 - `server/src/results/service.ts`
-- `server/src/review/routes.ts`
 - `server/src/review/service.ts`
 - `server/src/routes/protected.ts`
-- `server/src/users/service.ts`
-- `server/test/db/appUser.db.test.ts`
-- `server/test/db/auth.db.test.ts`
-- `server/test/db/backup.db.test.ts`
-- `server/test/db/demoSeed.db.test.ts`
-- `server/test/db/helpers.ts`
-- `server/test/db/judging.db.test.ts`
+- `server/src/rubric/routes.ts`
+- `server/src/rubric/service.ts`
 - `server/test/db/results.db.test.ts`
-- `server/test/db/review.db.test.ts`
+- `server/test/db/rubric.db.test.ts`
 - `server/test/db/rubricManagement.db.test.ts`
-- `server/test/db/teams.db.test.ts`
-- `server/test/db/users.db.test.ts`
+- `server/test/rubricRules.test.ts`
 - `shared/src/evaluations.ts`
+- `shared/src/index.ts`
 - `shared/src/results.ts`
 - `shared/src/review.ts`
-- `shared/src/users.ts`
+- `shared/src/rubric.ts`
 
-## Excluded from staging and source packages
+## Required earlier implementation files preserved
 
-- Real `server/.env` and `server/.env.demo`; local credential values.
-- `backups/` and SQL/checksum backup pairs. Retain them securely; do not delete them.
-- The original sibling `judging-platform-local.zip`; retain it, do not distribute it.
-- `.git/`, all `node_modules/`, `dist/`, caches, coverage and logs.
-- `artifacts/` ZIPs, package manifests/checksums and fresh-copy verification output.
-- `docs/screenshots/` generated visual/verification evidence, retained locally.
+These files are now tracked and remain required:
 
-`server/.env.example` is a reviewed placeholder template and belongs in Git. The root
-`package-lock.json`, assets/templates and test fixtures also belong in Git. Synthetic
-fixture passwords are test data, not production account credentials.
+- `client/src/pages/admin/evaluations/EditSubmission.tsx`
+- `client/src/pages/admin/evaluations/HistoricalSubmissions.tsx`
+- `client/src/pages/judge/CompetitionLeaderboardPage.tsx`
+- `server/migrations/010_admin_corrections.sql`
 
-Use `git status --short` and inspect the diff before selecting paths. Do not use a
-blanket `git add .` without review. Adding sources to Git and publishing a repository
-are separate actions; no push or publication is authorized by this list.
+Migrations 001-010 remain unchanged. Migration 011 is additive and must travel
+with the new rubric code. After applying 011, it must also remain immutable.
+The root lockfile, all three workspace manifests, assets/templates, tests and safe
+`server/.env.example` belong in Git and the source package.
+
+## Keep excluded
+
+Real `.env` and `.env.demo`, credentials, database backups, `.git`, `node_modules`,
+`dist`, generated ZIPs/manifests, logs, caches, screenshots and browser exports.
+Keep existing backups in secure local storage. The user confirmed moving/removing
+the original sibling ZIP; this task did not delete it.
+
+`artifacts/` contains reproducible packaging and local verification output only.
+Do not use blanket staging. No credentials, backups or generated artifacts should
+be staged, pushed or distributed in source ZIPs.

@@ -77,7 +77,7 @@ async function buildSnapshot(db: Db): Promise<Snapshot> {
   // stay in the database as history but never reach this query.
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT tj.team_id, u.id AS judge_id, u.full_name, u.role, u.status AS account_status,
-            e.id AS evaluation_id, e.status, e.total_score, e.reopened_count,
+            e.id AS evaluation_id, e.status, e.total_score, e.core_score, e.bonus_score, e.reopened_count,
             e.rubric_version_id, v.version_no
      FROM team_judges tj
      JOIN teams t ON t.id = tj.team_id AND t.status = 'active'
@@ -89,7 +89,7 @@ async function buildSnapshot(db: Db): Promise<Snapshot> {
 
   // Ratings of the submitted evaluations above, in rubric order, with weights.
   const [ratingRows] = await db.query<RowDataPacket[]>(
-    `SELECT es.evaluation_id, s.position AS section_pos, s.weight_percent, c.position AS criterion_pos, es.score
+    `SELECT es.evaluation_id, s.position AS section_pos, s.weight_percent, s.is_bonus, s.max_bonus_points, c.position AS criterion_pos, es.score
      FROM team_judges tj
      JOIN teams t ON t.id = tj.team_id AND t.status = 'active'
      JOIN evaluations e ON e.team_id = tj.team_id AND e.judge_id = tj.judge_id AND e.status = 'submitted'
@@ -98,25 +98,47 @@ async function buildSnapshot(db: Db): Promise<Snapshot> {
      LEFT JOIN evaluation_scores es ON es.evaluation_id = e.id AND es.criterion_id = c.id
      ORDER BY e.id, s.position, c.position`,
   );
-  const bySection = new Map<number, Map<number, { weight: number; scores: (number | null)[] }>>();
+  const bySection = new Map<
+    number,
+    Map<
+      number,
+      {
+        weight: number;
+        type: 'actual' | 'bonus';
+        maxBonusPoints: number | null;
+        scores: (number | null)[];
+      }
+    >
+  >();
   for (const r of ratingRows) {
     if (r.evaluation_id == null) continue;
     const evaluationId = Number(r.evaluation_id);
     const sections = bySection.get(evaluationId) ?? new Map();
     const pos = Number(r.section_pos);
-    const section = sections.get(pos) ?? { weight: Number(r.weight_percent ?? 0), scores: [] };
+    const section = sections.get(pos) ?? {
+      weight: Number(r.weight_percent ?? 0),
+      type: r.is_bonus ? 'bonus' : 'actual',
+      maxBonusPoints: r.max_bonus_points == null ? null : Number(r.max_bonus_points),
+      scores: [],
+    };
     section.scores.push(r.score == null ? null : Number(r.score));
     sections.set(pos, section);
     bySection.set(evaluationId, sections);
   }
   const recomputed = new Map<number, number | null>();
+  const parts = new Map<number, ReturnType<typeof scoreEvaluation>>();
   for (const [evaluationId, sections] of bySection) {
     const ordered = [...sections.entries()].sort((a, b) => a[0] - b[0]).map(([, s]) => s);
     const breakdown = scoreEvaluation(
-      ordered.map((s) => ({ weightPercent: s.weight })),
+      ordered.map((s) => ({
+        weightPercent: s.weight,
+        type: s.type,
+        maxBonusPoints: s.maxBonusPoints,
+      })),
       ordered.map((s) => s.scores),
     );
     recomputed.set(evaluationId, breakdown.total);
+    parts.set(evaluationId, breakdown);
   }
 
   const judgesByTeam = new Map<number, (JudgeResult & { storedScore: number | null })[]>();
@@ -136,6 +158,9 @@ async function buildSnapshot(db: Db): Promise<Snapshot> {
         status === 'submitted' && evaluationId != null
           ? (recomputed.get(evaluationId) ?? null)
           : null,
+      baseScore: status === 'submitted' ? (parts.get(evaluationId!)?.base ?? null) : null,
+      bonusScore: status === 'submitted' ? (parts.get(evaluationId!)?.bonus ?? null) : null,
+      maximumScore: parts.get(evaluationId!)?.maximum ?? 100,
       storedScore: status === 'submitted' ? Number(r.total_score) : null,
       rubricVersionNo: r.version_no == null ? null : Number(r.version_no),
     });
@@ -201,7 +226,7 @@ function assess(
   const allSubmitted = judges.length > 0 && submitted.length === judges.length;
   if (allSubmitted && submittedVersions.size > 1) {
     blockers.push(
-      `Judges used different rubric versions (${[...submittedVersions].map((v) => `v${v}`).join(', ')}). Reopen the older evaluations so they are rescored on one version.`,
+      `Judges used different rubric versions (${[...submittedVersions].map((v) => `v${v}`).join(', ')}). Historical evaluations remain on their original versions; resolve competition version policy before ranking.`,
     );
   }
 
@@ -244,6 +269,13 @@ function assess(
     provisionalAverage: scored.length
       ? scored.reduce((sum, j) => sum + toThousandths(j.score!), 0) / 1000 / scored.length
       : null,
+    baseAverage: scored.length
+      ? scored.reduce((n, j) => n + (j.baseScore ?? 0), 0) / scored.length
+      : null,
+    bonusAverage: scored.length
+      ? scored.reduce((n, j) => n + (j.bonusScore ?? 0), 0) / scored.length
+      : null,
+    maximumScore: versions.length === 1 && scored.length ? (scored[0]!.maximumScore ?? 100) : null,
     reasons: status === 'ready' ? [] : reasons,
     judges: judges.map(({ storedScore: _stored, ...j }) => j),
   };
@@ -383,8 +415,8 @@ function sortTeams<T extends TeamResult & { rank?: number; score?: number }>(
   });
 }
 
-export async function getResults(pool: Pool, q: ResultsQuery): Promise<ResultsResponse> {
-  const snapshot = await readSnapshot(pool);
+export async function getResults(pool: Db, q: ResultsQuery): Promise<ResultsResponse> {
+  const snapshot = 'getConnection' in pool ? await readSnapshot(pool) : await buildSnapshot(pool);
   const off = official(snapshot);
   const search = q.search?.trim().toLowerCase() || undefined;
   const ranked = new Set(off.teams.map((t) => t.teamId));
@@ -452,6 +484,9 @@ export async function getJudgeLeaderboard(
       ...identity(t),
       rank: t.rank,
       score: t.score,
+      baseAverage: t.baseAverage,
+      bonusAverage: t.bonusAverage,
+      maximumScore: t.maximumScore,
       rubricVersionNo: t.rubricVersionNo,
     }))
     .filter(matches);

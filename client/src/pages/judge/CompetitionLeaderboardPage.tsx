@@ -225,7 +225,11 @@ export function CompetitionLeaderboardPage() {
                                 <td className="px-5 py-5 font-semibold">{t.name}</td>
                                 <td className="px-5 py-5 text-muted">{t.projectName}</td>
                                 <td className="px-5 py-5 text-xl font-bold tabular-nums">
-                                  {formatScore(t.score)}
+                                  {formatScore(t.score)} / {t.maximumScore ?? 100}
+                                  <span className="block text-xs font-normal text-muted">
+                                    Base {formatScore(t.baseAverage ?? t.score)} + Bonus{' '}
+                                    {formatScore(t.bonusAverage ?? 0)}
+                                  </span>
                                   <span className="ml-1 text-xs font-normal text-muted">/ 100</span>
                                 </td>
                               </tr>
@@ -247,7 +251,11 @@ export function CompetitionLeaderboardPage() {
                               <h3 className="break-words text-lg font-bold">{t.name}</h3>
                               <p className="break-words text-sm text-muted">{t.projectName}</p>
                               <p className="border-t border-line pt-3 text-2xl font-bold text-ischool-blue-dark tabular-nums">
-                                {formatScore(t.score)}{' '}
+                                {formatScore(t.score)} / {t.maximumScore ?? 100}
+                                <span className="block text-xs font-normal text-muted">
+                                  Base {formatScore(t.baseAverage ?? t.score)} + Bonus{' '}
+                                  {formatScore(t.bonusAverage ?? 0)}
+                                </span>{' '}
                                 <span className="text-xs font-normal text-muted">
                                   final average / 100
                                 </span>

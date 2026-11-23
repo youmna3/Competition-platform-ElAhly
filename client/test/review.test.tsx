@@ -705,7 +705,7 @@ describe('Submission correction concurrency', () => {
     expect(screen.getByLabelText('Overall notes (optional)')).toHaveValue('My unsaved correction');
     await user.click(screen.getByRole('button', { name: 'Review changes' }));
     const comparison = screen.getByRole('table', { name: 'Before and after correction' });
-    expect(within(comparison).getByText('71.13')).toBeInTheDocument(); // persisted total, not recomputed 69.50
+    expect(within(comparison).getAllByText('71.13')[0]).toBeInTheDocument(); // persisted total, not recomputed 69.50
     expect(within(comparison).queryByText('Other administrator notes')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Confirm and save correction' }));
     await screen.findByText(/your unsaved changes are retained/);

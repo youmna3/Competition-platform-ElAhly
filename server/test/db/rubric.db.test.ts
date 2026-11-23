@@ -185,7 +185,7 @@ describe('publishing', () => {
 
   it('refuses anything but exactly 4 sections of exactly 2 criteria', async () => {
     const three = await validDraft(1, [40, 30, 30]);
-    await expectRefused(publish(c(), three.version), /exactly 4 sections/);
+    await expectRefused(publish(c(), three.version), /invalid section count/);
     await c().query('DELETE FROM rubric_versions WHERE id = ?', [three.version]);
     await c().query('UPDATE rubric SET draft_version_id = NULL');
 
@@ -200,7 +200,7 @@ describe('publishing', () => {
   it('refuses missing weights and weights that do not total exactly 100%', async () => {
     const { version, sections } = await validDraft(1, [30, 30, 30, 10]);
     await c().query('UPDATE rubric_sections SET weight_percent = NULL WHERE id = ?', [sections[3]]);
-    await expectRefused(publish(c(), version), /needs a weight/);
+    await expectRefused(publish(c(), version), /valid Actual\/Bonus limits/);
     await c().query('UPDATE rubric_sections SET weight_percent = 20 WHERE id = ?', [sections[3]]);
     await c().query('UPDATE rubric_criteria SET weight = 2 WHERE section_id = ?', [sections[3]]);
     await expectRefused(publish(c(), version), /total exactly 100%/);
@@ -213,15 +213,15 @@ describe('publishing', () => {
   it('refuses criteria that are not required 1-5 star ratings weighted by their section', async () => {
     const { version, criteria } = await validDraft(1);
     await c().query('UPDATE rubric_criteria SET max_score = 10 WHERE id = ?', [criteria[0]]);
-    await expectRefused(publish(c(), version), /1-5 star/);
+    await expectRefused(publish(c(), version), /invalid star scale/);
     await c().query('UPDATE rubric_criteria SET max_score = 5, weight = 3 WHERE id = ?', [
       criteria[0],
     ]);
-    await expectRefused(publish(c(), version), /1-5 star/);
+    await expectRefused(publish(c(), version), /invalid star scale/);
     await c().query('UPDATE rubric_criteria SET weight = 2.5, is_required = FALSE WHERE id = ?', [
       criteria[0],
     ]);
-    await expectRefused(publish(c(), version), /1-5 star/);
+    await expectRefused(publish(c(), version), /invalid star scale/);
   });
 
   it('refuses bonus sections', async () => {

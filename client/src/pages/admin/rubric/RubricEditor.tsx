@@ -1,8 +1,8 @@
 import { useId } from 'react';
 import { RUBRIC_LIMITS as L, totalWeight, type RubricContent } from '@judging/shared';
 import { StarRating } from '../../../components/StarRating';
-import { Card } from '../../../components/ui';
-import type { EditCriterion, EditRubric, EditSection } from './model';
+import { Button, Card } from '../../../components/ui';
+import { newKey, type EditCriterion, type EditRubric, type EditSection } from './model';
 
 const inputClass =
   'block w-full rounded-xl border border-black/15 bg-white px-3.5 py-2.5 text-base shadow-sm outline-none transition placeholder:text-black/35 focus:border-ischool-blue focus:ring-4 focus:ring-ischool-blue/15 aria-[invalid=true]:border-ahly-red sm:text-sm';
@@ -151,6 +151,7 @@ export function RubricEditor({
 
   const total = totalWeight(
     content.sections.map((s) => ({
+      type: s.type,
       weightPercent: Number.isFinite(s.weightPercent) ? s.weightPercent : 0,
     })),
   );
@@ -184,7 +185,7 @@ export function RubricEditor({
         />
         <Field
           label="Instructions for judges (optional)"
-          hint="How judges should approach rating. Shown on the rubric and, from Phase 6, on the scoring form."
+          hint="How judges should approach rating. Shown on the rubric on the scoring form."
           path="instructions"
           value={value.instructions}
           onChange={(instructions) => set({ instructions })}
@@ -204,15 +205,17 @@ export function RubricEditor({
           </p>
         </div>
         <div className="grid gap-5 sm:grid-cols-2">
-          {value.sections.map((s, i) => (
-            <WeightControl
-              key={s.key}
-              section={s}
-              index={i}
-              onChange={(weightPercent) => setSection(i, { weightPercent })}
-              error={errors.get(`sections.${i}.weightPercent`)}
-            />
-          ))}
+          {value.sections.map((s, i) =>
+            s.type === 'bonus' ? null : (
+              <WeightControl
+                key={s.key}
+                section={s}
+                index={i}
+                onChange={(weightPercent) => setSection(i, { weightPercent })}
+                error={errors.get(`sections.${i}.weightPercent`)}
+              />
+            ),
+          )}
         </div>
         <div
           data-path="weights"
@@ -236,10 +239,38 @@ export function RubricEditor({
         <div>
           <h2 className="text-lg font-semibold">3. Sections and criteria</h2>
           <p className="text-sm text-muted">
-            The rubric always has 4 sections with 2 criteria each. Judges rate every criterion from
-            1 to 5 stars.
+            Each section has two criteria rated 1 to 5 stars. Actual weights total 100%. Optional
+            Bonus sections add points above 100; leave both stars blank for zero bonus.
           </p>
         </div>
+        {value.scoringFormat === 2 && (
+          <Button
+            disabled={value.sections.length >= 10}
+            onClick={() =>
+              set({
+                sections: [
+                  ...value.sections,
+                  {
+                    key: newKey(),
+                    title: `Section ${value.sections.length + 1}`,
+                    description: '',
+                    type: 'actual',
+                    weightPercent: '',
+                    maxBonusPoints: '',
+                    criteria: [1, 2].map((n) => ({
+                      key: newKey(),
+                      title: `Criterion ${n}`,
+                      description: '',
+                      guidelines: '',
+                    })),
+                  },
+                ],
+              })
+            }
+          >
+            Add section
+          </Button>
+        )}
         {value.sections.map((s, i) => (
           <Card key={s.key} className="space-y-4 !p-0">
             <div
@@ -252,10 +283,53 @@ export function RubricEditor({
                 {s.title.trim() && <span className="font-normal text-black/60"> · {s.title}</span>}
               </p>
               <span className="rounded-full bg-ischool-blue-soft px-3 py-0.5 text-sm font-semibold text-ischool-blue-dark">
-                {s.weightPercent ? `${s.weightPercent}% of the score` : 'Weight not set'}
+                {s.type === 'bonus'
+                  ? `Bonus: +${s.maxBonusPoints || '?'} maximum`
+                  : s.weightPercent
+                    ? `${s.weightPercent}% of the base score`
+                    : 'Weight not set'}
               </span>
             </div>
             <div className="space-y-4 px-5 sm:px-6">
+              {value.scoringFormat === 2 && (
+                <div className="flex flex-wrap items-end gap-4">
+                  <label className="text-sm font-semibold">
+                    Section type
+                    <select
+                      className={inputClass}
+                      value={s.type}
+                      onChange={(e) =>
+                        setSection(i, { type: e.target.value as 'actual' | 'bonus' })
+                      }
+                    >
+                      <option value="actual">Actual</option>
+                      <option value="bonus">Bonus</option>
+                    </select>
+                  </label>
+                  {s.type === 'bonus' && (
+                    <label className="text-sm font-semibold">
+                      Maximum bonus points
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min="1"
+                        max="100"
+                        step="1"
+                        value={s.maxBonusPoints}
+                        onChange={(e) => setSection(i, { maxBonusPoints: e.target.value })}
+                      />
+                    </label>
+                  )}
+                  <Button
+                    variant="secondary"
+                    disabled={value.sections.length <= 1}
+                    onClick={() => set({ sections: value.sections.filter((_, k) => k !== i) })}
+                  >
+                    Remove section {i + 1}
+                  </Button>
+                </div>
+              )}
+
               <Field
                 label="Section title"
                 path={`sections.${i}.title`}

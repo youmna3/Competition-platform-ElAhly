@@ -49,6 +49,11 @@ export const required = [
   'client/src/pages/admin/evaluations/EditSubmission.tsx',
   'client/src/pages/admin/evaluations/HistoricalSubmissions.tsx',
   'client/src/pages/judge/CompetitionLeaderboardPage.tsx',
+  'client/src/pages/admin/reports/ReportsPage.tsx',
+  'server/src/reports/routes.ts',
+  'server/src/reports/service.ts',
+  'server/src/reports/format.ts',
+  'shared/src/reports.ts',
   ...[
     '001_core',
     '002_rubric',
@@ -60,6 +65,7 @@ export const required = [
     '008_evaluations_access',
     '009_evaluation_history',
     '010_admin_corrections',
+    '011_dynamic_rubrics',
   ].map((n) => `server/migrations/${n}.sql`),
 ];
 export function allowedPath(path) {

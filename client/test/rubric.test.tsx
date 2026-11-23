@@ -375,7 +375,7 @@ describe('View Rubric', () => {
     expect(await screen.findByRole('heading', { name: 'Final rubric' })).toBeInTheDocument();
     expect(screen.getByText('Rate fairly.')).toBeInTheDocument();
     expect(screen.getByText('Look for prior art')).toBeInTheDocument();
-    expect(screen.getByText('35% of the final score')).toBeInTheDocument();
+    expect(screen.getByText('35% of base')).toBeInTheDocument();
     expect(screen.getAllByRole('img', { name: /rated from 1 to 5 stars/ })).toHaveLength(8);
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();

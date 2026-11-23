@@ -38,7 +38,7 @@ export async function loadVersion(db: Db, id: number): Promise<RubricVersion | n
   const v = rows[0];
   if (!v) return null;
   const [sections] = await db.query<RowDataPacket[]>(
-    `SELECT id, title, description, weight_percent FROM rubric_sections
+    `SELECT id, title, description, weight_percent, is_bonus, max_bonus_points FROM rubric_sections
      WHERE rubric_version_id = ? ORDER BY position`,
     [id],
   );
@@ -49,6 +49,7 @@ export async function loadVersion(db: Db, id: number): Promise<RubricVersion | n
   );
   return {
     id: Number(v.id),
+    scoringFormat: Number(v.scoring_format) === 2 ? 2 : 1,
     versionNo: Number(v.version_no),
     status: v.status as RubricVersionStatus,
     revision: Number(v.revision),
@@ -62,6 +63,8 @@ export async function loadVersion(db: Db, id: number): Promise<RubricVersion | n
     publishedByEmail: v.published_by_email ?? null,
     sections: sections.map((s) => ({
       id: Number(s.id),
+      type: s.is_bonus ? 'bonus' : 'actual',
+      maxBonusPoints: num(s.max_bonus_points),
       title: String(s.title),
       description: String(s.description ?? ''),
       weightPercent: num(s.weight_percent),
@@ -126,10 +129,20 @@ export async function getAdminRubric(db: Db): Promise<AdminRubricResponse> {
   const p = await pointers(db);
   return {
     state: stateOf(p),
+    versions: await listVersions(db),
     published: p.publishedId == null ? null : await loadVersion(db, p.publishedId),
     draft: p.draftId == null ? null : await loadVersion(db, p.draftId),
     evaluations: await evaluationCounts(db, p.publishedId),
   };
+}
+
+export async function listVersions(db: Db): Promise<RubricVersion[]> {
+  const [rows] = await db.query<RowDataPacket[]>(
+    'SELECT id FROM rubric_versions ORDER BY version_no DESC',
+  );
+  const versions: RubricVersion[] = [];
+  for (const row of rows) versions.push((await loadVersion(db, Number(row.id)))!);
+  return versions;
 }
 
 /** The rubric judges score against, or null when nothing is published. */
@@ -153,15 +166,17 @@ async function writeVersionFields(
   // The fixed shape in Phase 1 terms: a 1-5 scale, no bonus, a maximum of 100.
   await conn.query(
     `UPDATE rubric_versions SET title = ?, description = ?, instructions = ?,
-       scale_min = ?, scale_max = ?, bonus_policy = 'separate', bonus_cap = NULL,
+       scoring_format = ?, scale_min = ?, scale_max = ?, bonus_policy = ?, bonus_cap = NULL,
        total_target = ?, updated_by = ?, revision = revision + 1
      WHERE id = ? AND status = 'draft'`,
     [
       c.title.trim(),
       orNull(c.description),
       orNull(c.instructions),
+      c.scoringFormat ?? 1,
       RUBRIC_SHAPE.minStars,
       RUBRIC_SHAPE.maxStars,
+      c.scoringFormat === 2 ? 'add_to_total' : 'separate',
       RUBRIC_SHAPE.maxScore,
       actor.id,
       id,
@@ -175,35 +190,100 @@ async function writeVersionFields(
  * rating x weight summed over the section's two criteria is the section score.
  */
 async function writeStructure(conn: PoolConnection, id: number, c: RubricContent) {
-  await conn.query('DELETE FROM rubric_criteria WHERE rubric_version_id = ?', [id]);
-  await conn.query('DELETE FROM rubric_sections WHERE rubric_version_id = ?', [id]);
-  await conn.query('DELETE FROM rubric_scale_levels WHERE rubric_version_id = ?', [id]);
-  for (const [i, s] of c.sections.entries()) {
-    const [inserted] = await conn.query<ResultSetHeader>(
-      `INSERT INTO rubric_sections (rubric_version_id, position, title, description, is_bonus, weight_percent)
-       VALUES (?, ?, ?, ?, FALSE, ?)`,
-      [id, i + 1, s.title.trim(), orNull(s.description), s.weightPercent],
-    );
-    const criterionWeight = s.weightPercent == null ? 1 : s.weightPercent / 10;
-    await conn.query(
-      `INSERT INTO rubric_criteria (rubric_version_id, section_id, position, title, description,
-         guidelines, min_score, max_score, weight, is_required) VALUES ?`,
-      [
-        s.criteria.map((cr, j) => [
-          id,
-          inserted.insertId,
-          j + 1,
-          cr.title.trim(),
-          orNull(cr.description),
-          orNull(cr.guidelines),
-          RUBRIC_SHAPE.minStars,
-          RUBRIC_SHAPE.maxStars,
-          criterionWeight,
-          true,
-        ]),
-      ],
-    );
+  const [oldSections] = await conn.query<RowDataPacket[]>(
+    'SELECT id FROM rubric_sections WHERE rubric_version_id=?',
+    [id],
+  );
+  const [oldCriteria] = await conn.query<RowDataPacket[]>(
+    'SELECT id, section_id FROM rubric_criteria WHERE rubric_version_id=?',
+    [id],
+  );
+  const sectionIds = new Set(oldSections.map((s) => Number(s.id)));
+  const criterionSections = new Map(
+    oldCriteria.map((cr) => [Number(cr.id), Number(cr.section_id)]),
+  );
+  const keptSections = new Set<number>();
+  const keptCriteria = new Set<number>();
+  // Reserve positions while retaining database IDs, including when earlier rows are removed.
+  await conn.query('UPDATE rubric_sections SET position=position+1000 WHERE rubric_version_id=?', [
+    id,
+  ]);
+  await conn.query('UPDATE rubric_criteria SET position=position+1000 WHERE rubric_version_id=?', [
+    id,
+  ]);
+  for (const [i, section] of c.sections.entries()) {
+    if (section.id != null && (!sectionIds.has(section.id) || keptSections.has(section.id)))
+      throw invalid(
+        [{ path: 'sections', message: 'Unknown or duplicate draft section ID.' }],
+        false,
+      );
+    const bonus = section.type === 'bonus';
+    const values = [
+      i + 1,
+      section.title.trim(),
+      orNull(section.description),
+      bonus,
+      bonus ? null : section.weightPercent,
+      bonus ? (section.maxBonusPoints ?? null) : null,
+    ];
+    let sectionId = section.id;
+    if (sectionId != null) {
+      await conn.query(
+        'UPDATE rubric_sections SET position=?,title=?,description=?,is_bonus=?,weight_percent=?,max_bonus_points=? WHERE id=? AND rubric_version_id=?',
+        [...values, sectionId, id],
+      );
+    } else {
+      const [r] = await conn.query<ResultSetHeader>(
+        'INSERT INTO rubric_sections (position,title,description,is_bonus,weight_percent,max_bonus_points,rubric_version_id) VALUES (?,?,?,?,?,?,?)',
+        [...values, id],
+      );
+      sectionId = r.insertId;
+    }
+    keptSections.add(sectionId);
+    for (const [j, cr] of section.criteria.entries()) {
+      if (cr.id != null && (criterionSections.get(cr.id) !== sectionId || keptCriteria.has(cr.id)))
+        throw invalid(
+          [{ path: 'sections', message: 'Unknown, moved or duplicate draft criterion ID.' }],
+          false,
+        );
+      const points = bonus ? section.maxBonusPoints : section.weightPercent;
+      const fields = [
+        j + 1,
+        cr.title.trim(),
+        orNull(cr.description),
+        orNull(cr.guidelines),
+        1,
+        5,
+        points == null ? 1 : points / 10,
+        !bonus,
+      ];
+      if (cr.id != null) {
+        await conn.query(
+          'UPDATE rubric_criteria SET position=?,title=?,description=?,guidelines=?,min_score=?,max_score=?,weight=?,is_required=? WHERE id=?',
+          [...fields, cr.id],
+        );
+        keptCriteria.add(cr.id);
+      } else {
+        const [r] = await conn.query<ResultSetHeader>(
+          'INSERT INTO rubric_criteria (position,title,description,guidelines,min_score,max_score,weight,is_required,rubric_version_id,section_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
+          [...fields, id, sectionId],
+        );
+        keptCriteria.add(r.insertId);
+      }
+    }
   }
+  for (const cr of oldCriteria)
+    if (!keptCriteria.has(Number(cr.id)))
+      await conn.query('DELETE FROM rubric_criteria WHERE id=? AND rubric_version_id=?', [
+        cr.id,
+        id,
+      ]);
+  for (const section of oldSections)
+    if (!keptSections.has(Number(section.id)))
+      await conn.query('DELETE FROM rubric_sections WHERE id=? AND rubric_version_id=?', [
+        section.id,
+        id,
+      ]);
 }
 
 function summary(c: RubricContent) {
@@ -249,7 +329,7 @@ async function lockDraft(conn: PoolConnection, revision: number) {
 }
 
 /** Starts a draft: empty when nothing is published, otherwise a copy of the published version. */
-export function createDraft(pool: Pool, actor: Actor) {
+export function createDraft(pool: Pool, actor: Actor, sourceVersionId?: number) {
   return inTransaction(pool, async (conn) => {
     const p = await pointers(conn, true);
     if (p.draftId != null) {
@@ -263,13 +343,26 @@ export function createDraft(pool: Pool, actor: Actor) {
       'SELECT COALESCE(MAX(version_no), 0) + 1 AS n FROM rubric_versions',
     )) as unknown as [RowDataPacket[]];
     const versionNo = Number(next!.n);
-    const base = p.publishedId == null ? null : await loadVersion(conn, p.publishedId);
+    const baseId = sourceVersionId ?? p.publishedId;
+    const base = baseId == null ? null : await loadVersion(conn, baseId);
+    if (sourceVersionId != null && (!base || base.status === 'draft'))
+      throw new RuleError(
+        400,
+        RUBRIC_ERRORS.RUBRIC_INVALID,
+        'Restore requires an existing published or historical version.',
+      );
     const [inserted] = await conn.query<ResultSetHeader>(
       `INSERT INTO rubric_versions (version_no, title, based_on_version_id, created_by, updated_by)
        VALUES (?, '', ?, ?, ?)`,
       [versionNo, base?.id ?? null, actor.id, actor.id],
     );
     const content = base ? contentOf(base) : defaultRubricContent();
+    // A restored version is a NEW editable format. Original versions and evaluations stay untouched.
+    content.scoringFormat = 2;
+    for (const section of content.sections) {
+      delete section.id;
+      for (const criterion of section.criteria) delete criterion.id;
+    }
     await writeVersionFields(conn, inserted.insertId, content, actor);
     await writeStructure(conn, inserted.insertId, content);
     await conn.query('UPDATE rubric SET draft_version_id = ? WHERE id = 1', [inserted.insertId]);

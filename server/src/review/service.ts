@@ -361,36 +361,37 @@ export function correctSubmission(
     const rubric = (await loadVersion(conn, before.rubricVersionId))!;
     checkInput(rubric, input);
     if (
-      input.ratings.length !== 8 ||
-      input.ratings.some((r) => r.rating == null) ||
-      input.sectionNotes.length !== 4
+      input.ratings.length !== rubric.sections.reduce((n, s) => n + s.criteria.length, 0) ||
+      input.sectionNotes.length !== rubric.sections.length
     )
       throw new RuleError(
         400,
         'EVALUATION_INVALID',
-        'All eight ratings and four section notes are required.',
+        'Send every criterion and section note from the original rubric.',
       );
     const ratings = new Map(input.ratings.map((r) => [r.criterionId, r.rating]));
-    const total = scoreEvaluation(
+    const breakdown = scoreEvaluation(
       rubric.sections,
       rubric.sections.map((s) => s.criteria.map((c) => ratings.get(c.id) ?? null)),
-    ).total;
+    );
+    const total = breakdown.total;
     if (total == null)
       throw new RuleError(
         400,
         'EVALUATION_INVALID',
-        'The original rubric requires eight complete ratings.',
+        'Rate all Actual criteria and complete any started Bonus section.',
       );
     const previous = snapshotOf(rubric, before, before.totalScore!);
     const after = snapshotOf(rubric, { ...before, ...input }, total);
     const [event] = await conn.query<ResultSetHeader>(
-      `INSERT INTO evaluation_events (evaluation_id,event,actor_id,actor_email,rubric_version_id,row_version,rated_count,total_score,previous_score,reason,snapshot,previous_snapshot) VALUES (?, 'admin_corrected', ?, ?, ?, ?, 8, ?, ?, ?, ?, ?)`,
+      `INSERT INTO evaluation_events (evaluation_id,event,actor_id,actor_email,rubric_version_id,row_version,rated_count,total_score,previous_score,reason,snapshot,previous_snapshot) VALUES (?, 'admin_corrected', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         actor.id,
         actor.email,
         before.rubricVersionId,
         rowVersion + 1,
+        input.ratings.filter((r) => r.rating != null).length,
         total,
         before.totalScore,
         reason.trim(),
@@ -411,8 +412,8 @@ export function correctSubmission(
           [id, before.rubricVersionId, n.sectionId, n.note],
         );
       await conn.query(
-        `UPDATE evaluations SET core_score=?,bonus_score=0,total_score=?,overall_notes=?,row_version=row_version+1,last_saved_at=NOW(),save_count=save_count+1 WHERE id=?`,
-        [total, total, input.overallNotes, id],
+        `UPDATE evaluations SET core_score=?,bonus_score=?,total_score=?,overall_notes=?,row_version=row_version+1,last_saved_at=NOW(),save_count=save_count+1 WHERE id=?`,
+        [breakdown.base, breakdown.bonus, total, input.overallNotes, id],
       );
       await writeAudit(conn, {
         actorId: actor.id,
@@ -449,7 +450,7 @@ export function reopenEvaluation(pool: Pool, actor: Actor, id: number, rawReason
   }
   return inTransaction(pool, async (conn) => {
     const [rows] = await conn.query<RowDataPacket[]>(
-      `SELECT e.id, e.team_id, e.judge_id, e.status, e.total_score, e.rubric_version_id, e.row_version,
+      `SELECT e.id, e.team_id, e.judge_id, e.status, e.total_score, e.required_scored, e.rubric_version_id, e.row_version,
               t.team_code, t.status AS team_status, u.email, u.status AS account_status,
               EXISTS (SELECT 1 FROM team_judges tj WHERE tj.team_id = e.team_id AND tj.judge_id = e.judge_id) AS assigned
        FROM evaluations e JOIN teams t ON t.id = e.team_id JOIN users u ON u.id = e.judge_id
@@ -500,13 +501,14 @@ export function reopenEvaluation(pool: Pool, actor: Actor, id: number, rawReason
     await conn.query(
       `INSERT INTO evaluation_events (evaluation_id, event, actor_id, actor_email, rubric_version_id, row_version,
          rated_count, previous_score, reason)
-       VALUES (?, 'reopened', ?, ?, ?, ?, 8, ?, ?)`,
+       VALUES (?, 'reopened', ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         actor.id,
         actor.email,
         row.rubric_version_id,
         Number(row.row_version) + 1,
+        Number(row.required_scored),
         row.total_score,
         reason,
       ],

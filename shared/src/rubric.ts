@@ -1,14 +1,15 @@
 /**
- * The competition's single rubric: fixed shape, types, the scoring formula and
+ * Versioned rubric types, scoring, the scoring formula and
  * the validation rules. Shared by the server (which enforces and recomputes)
  * and the browser (which shows the same results and messages live).
  *
- * Shape: exactly 4 sections × 2 criteria. Every criterion is rated 1–5 stars.
- * Each section has a percentage weight; the four weights total 100.
+ * Legacy format 1 retains exactly 4 Actual sections × 2 required criteria.
+ * Format 2 permits 1–10 Actual/Bonus sections with two 1–5 star criteria each.
+ * Actual weights total 100; optional Bonus uses explicitly configured points.
  *
  *   section rating = (rating 1 + rating 2) / 2
  *   section score  = section rating / 5 × section weight
- *   final score    = sum of the 4 section scores, out of 100
+ *   combined score = Actual section sum + awarded Bonus, without a cap at 100
  */
 
 /** Rubric states shown to admins. Mirrors the database view v_rubric_status. */
@@ -46,6 +47,7 @@ export const RUBRIC_LIMITS = {
 // ---------------------------------------------------------------------------
 
 export interface RubricCriterionInput {
+  id?: number;
   title: string;
   description: string;
   /** What judges should look for, optional. */
@@ -53,6 +55,9 @@ export interface RubricCriterionInput {
 }
 
 export interface RubricSectionInput {
+  id?: number;
+  type?: 'actual' | 'bonus';
+  maxBonusPoints?: number | null;
   title: string;
   description: string;
   /** Whole-number percentage of the final score, 1–100; null until the admin sets it. */
@@ -62,6 +67,8 @@ export interface RubricSectionInput {
 
 /** Everything the admin configures. Always 4 sections of 2 criteria, in order. */
 export interface RubricContent {
+  /** Absent/1: immutable legacy four-section scoring. 2: dynamic Actual + optional Bonus. */
+  scoringFormat?: 1 | 2;
   title: string;
   description: string;
   instructions: string;
@@ -106,6 +113,7 @@ export interface RubricEvaluationCounts {
 
 /** GET /api/admin/rubric */
 export interface AdminRubricResponse {
+  versions?: RubricVersion[];
   state: RubricState;
   published: RubricVersion | null;
   draft: RubricVersion | null;
@@ -166,12 +174,13 @@ export function defaultRubricContent(): RubricContent {
 /** The editable content of a stored version (ids dropped). */
 export function contentOf(version: RubricVersion): RubricContent {
   return {
+    scoringFormat: version.scoringFormat ?? 1,
     title: version.title,
     description: version.description,
     instructions: version.instructions,
-    sections: version.sections.map(({ id: _id, criteria, ...s }) => ({
+    sections: version.sections.map(({ criteria, ...s }) => ({
       ...s,
-      criteria: criteria.map(({ id: _cid, ...c }) => ({ ...c })),
+      criteria: criteria.map((c) => ({ ...c })),
     })),
   };
 }
@@ -187,9 +196,15 @@ export const isStarRating = (n: unknown): n is number =>
   n <= RUBRIC_SHAPE.maxStars;
 
 /** Sum of the section weights that are set. */
-export function totalWeight(sections: Pick<RubricSectionInput, 'weightPercent'>[]): number {
-  return sections.reduce((sum, s) => sum + (s.weightPercent ?? 0), 0);
+export function totalWeight(sections: ScoringSection[]): number {
+  return sections.reduce((sum, s) => sum + (s.type === 'bonus' ? 0 : (s.weightPercent ?? 0)), 0);
 }
+
+export type ScoringSection = Pick<RubricSectionInput, 'weightPercent' | 'type' | 'maxBonusPoints'>;
+export const sectionMaximum = (s: ScoringSection) =>
+  s.type === 'bonus' ? (s.maxBonusPoints ?? 0) : (s.weightPercent ?? 0);
+export const maximumScore = (sections: ScoringSection[]) =>
+  100 + sections.reduce((sum, s) => sum + (s.type === 'bonus' ? (s.maxBonusPoints ?? 0) : 0), 0);
 
 /** Average of a section's star ratings. */
 export function sectionRating(ratings: readonly number[]): number {
@@ -208,6 +223,9 @@ export function sectionScore(ratings: readonly number[], weightPercent: number):
 }
 
 export interface ScoreBreakdown {
+  base: number | null;
+  bonus: number | null;
+  maximum: number;
   /** Per section, in order; rating and score are null while a rating is missing. */
   sections: { rating: number | null; score: number | null; weightPercent: number }[];
   /** Out of 100; null until every criterion is rated. */
@@ -219,12 +237,14 @@ export interface ScoreBreakdown {
  * criterion j of section i, or null if it isn't rated yet.
  */
 export function scoreEvaluation(
-  sections: Pick<RubricSectionInput, 'weightPercent'>[],
+  sections: ScoringSection[],
   ratings: (number | null)[][],
 ): ScoreBreakdown {
   const result = sections.map((s, i) => {
     const r = ratings[i] ?? [];
-    const weightPercent = s.weightPercent ?? 0;
+    const weightPercent = sectionMaximum(s);
+    if (s.type === 'bonus' && r.length === 2 && r.every((v) => v == null))
+      return { rating: null, score: 0, weightPercent };
     const complete = r.length === RUBRIC_SHAPE.criteriaPerSection && r.every(isStarRating);
     return complete
       ? {
@@ -237,7 +257,21 @@ export function scoreEvaluation(
   const total = result.every((s) => s.score != null)
     ? Math.round(result.reduce((sum, s) => sum + (s.score ?? 0), 0) * 1000) / 1000
     : null;
-  return { sections: result, total };
+  const sumType = (bonus: boolean) =>
+    Math.round(
+      result.reduce(
+        (sum, s, i) => sum + ((sections[i]?.type === 'bonus') === bonus ? (s.score ?? 0) : 0),
+        0,
+      ) * 1000,
+    ) / 1000;
+  return {
+    sections: result,
+    total,
+    // Live subtotals include completed sections; only the combined total signals completeness.
+    base: sumType(false),
+    bonus: sumType(true),
+    maximum: maximumScore(sections),
+  };
 }
 
 /** Points for display: up to 2 decimals, no trailing zeros. */
@@ -296,12 +330,16 @@ export function validateRubric(rubric: RubricContent): RubricValidation {
   );
   if (!rubric.title.trim()) publish.push({ path: 'title', message: 'Give the rubric a title.' });
 
-  if (rubric.sections.length !== RUBRIC_SHAPE.sections) {
+  if ((rubric.scoringFormat ?? 1) === 1 && rubric.sections.length !== RUBRIC_SHAPE.sections) {
     save.push({
       path: 'sections',
       message: `The rubric must have exactly ${RUBRIC_SHAPE.sections} sections.`,
     });
   }
+  if (rubric.scoringFormat === 2 && (rubric.sections.length < 1 || rubric.sections.length > 10))
+    save.push({ path: 'sections', message: 'Use between 1 and 10 sections.' });
+  if (!rubric.sections.some((s) => s.type !== 'bonus'))
+    publish.push({ path: 'weights', message: 'At least one Actual section is required.' });
   let weightValuesOk = true;
   rubric.sections.forEach((s, i) => {
     const path = `sections.${i}`;
@@ -316,7 +354,30 @@ export function validateRubric(rubric: RubricContent): RubricValidation {
       s.description,
       L.sectionDescription,
     );
-    if (s.weightPercent == null) {
+    if (s.type === 'bonus') {
+      if (rubric.scoringFormat !== 2)
+        save.push({ path, message: 'Bonus sections require scoring format 2.' });
+      if (s.weightPercent != null)
+        save.push({
+          path: `${path}.weightPercent`,
+          message: 'Bonus sections cannot have an Actual weight.',
+        });
+      if (
+        s.maxBonusPoints == null ||
+        !Number.isInteger(s.maxBonusPoints) ||
+        s.maxBonusPoints < 1 ||
+        s.maxBonusPoints > 100
+      )
+        (s.maxBonusPoints == null ? publish : save).push({
+          path: `${path}.maxBonusPoints`,
+          message: 'Set a maximum bonus from 1 to 100 whole points.',
+        });
+    } else if (s.maxBonusPoints != null) {
+      save.push({
+        path: `${path}.maxBonusPoints`,
+        message: 'Actual sections cannot have bonus points.',
+      });
+    } else if (s.weightPercent == null) {
       publish.push({ path: `${path}.weightPercent`, message: `Set the weight of ${name}.` });
     } else if (
       typeof s.weightPercent !== 'number' ||
@@ -360,7 +421,8 @@ export function validateRubric(rubric: RubricContent): RubricValidation {
   });
 
   const allSet =
-    rubric.sections.length > 0 && rubric.sections.every((s) => s.weightPercent != null);
+    rubric.sections.length > 0 &&
+    rubric.sections.every((s) => s.type === 'bonus' || s.weightPercent != null);
   const total = totalWeight(rubric.sections);
   if (allSet && weightValuesOk && total !== RUBRIC_SHAPE.totalWeight) {
     publish.push({

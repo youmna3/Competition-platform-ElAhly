@@ -3,7 +3,14 @@ import type { Pool } from 'mysql2/promise';
 import { z } from 'zod';
 import { RUBRIC_LIMITS as L } from '@judging/shared';
 import type { Actor } from '../teams/service.js';
-import { createDraft, discardDraft, getAdminRubric, publishDraft, saveDraft } from './service.js';
+import {
+  createDraft,
+  discardDraft,
+  getAdminRubric,
+  publishDraft,
+  saveDraft,
+  loadVersion,
+} from './service.js';
 
 // Shape only. The friendly, field-by-field rules (including the fixed 4 x 2
 // shape and the 100% total) live in validateRubric (shared), which the service
@@ -12,6 +19,7 @@ const text = (max: number) => z.string().max(max * 2);
 
 const criterion = z
   .object({
+    id: z.number().int().positive().optional(),
     title: text(L.criterionTitle),
     description: text(L.criterionDescription),
     guidelines: text(L.guidelines),
@@ -20,6 +28,9 @@ const criterion = z
 
 const section = z
   .object({
+    id: z.number().int().positive().optional(),
+    type: z.enum(['actual', 'bonus']).optional(),
+    maxBonusPoints: z.number().finite().nullable().optional(),
     title: text(L.sectionTitle),
     description: text(L.sectionDescription),
     weightPercent: z.number().finite().nullable(),
@@ -29,6 +40,7 @@ const section = z
 
 const content = z
   .object({
+    scoringFormat: z.union([z.literal(1), z.literal(2)]).optional(),
     title: text(L.title),
     description: text(L.description),
     instructions: text(L.instructions),
@@ -66,7 +78,23 @@ export function rubricAdminRouter(pool: Pool): Router {
   });
 
   router.post('/draft', async (req, res) => {
-    res.status(201).json(await createDraft(pool, actorOf(req)));
+    const parsed = z
+      .object({ sourceVersionId: z.number().int().positive().optional() })
+      .strict()
+      .safeParse(req.body ?? {});
+    if (!parsed.success) return invalidShape(res, parsed.error);
+    res.status(201).json(await createDraft(pool, actorOf(req), parsed.data.sourceVersionId));
+  });
+
+  router.get('/versions/:id', async (req, res) => {
+    const id = z.coerce.number().int().positive().safeParse(req.params.id);
+    if (!id.success) return invalidShape(res, id.error);
+    const version = await loadVersion(pool, id.data);
+    if (!version)
+      return res
+        .status(404)
+        .json({ error: { code: 'NOT_FOUND', message: 'Rubric version not found.' } });
+    res.json({ version });
   });
 
   router.put('/draft', async (req, res) => {

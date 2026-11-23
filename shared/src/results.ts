@@ -32,6 +32,9 @@ export interface JudgeResult {
   reopened: boolean;
   /** Recomputed from the stored ratings; only for submitted evaluations. */
   score: number | null;
+  baseScore?: number | null;
+  bonusScore?: number | null;
+  maximumScore?: number;
   rubricVersionNo: number | null;
 }
 
@@ -48,6 +51,9 @@ export interface TeamResult {
   versions: number[];
   /** Average of submitted scores so far: provisional, never an official score. */
   provisionalAverage: number | null;
+  baseAverage?: number | null;
+  bonusAverage?: number | null;
+  maximumScore?: number | null;
   /** Why the team is not (yet) officially ranked. Empty for ranked teams. */
   reasons: string[];
   judges: JudgeResult[];
@@ -109,7 +115,16 @@ export const LEADERBOARD_SORTS = ['rank', 'teamCode', 'name', 'projectName', 'sc
 export type LeaderboardSort = (typeof LEADERBOARD_SORTS)[number];
 export type LeaderboardTeam = Pick<
   RankedTeam,
-  'teamId' | 'teamCode' | 'name' | 'projectName' | 'rank' | 'score' | 'rubricVersionNo'
+  | 'teamId'
+  | 'teamCode'
+  | 'name'
+  | 'projectName'
+  | 'rank'
+  | 'score'
+  | 'rubricVersionNo'
+  | 'baseAverage'
+  | 'bonusAverage'
+  | 'maximumScore'
 >;
 export interface JudgeLeaderboardResponse {
   computedAt: string;

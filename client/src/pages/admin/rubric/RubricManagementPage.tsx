@@ -85,11 +85,14 @@ export function RubricManagementPage() {
     } else setError(e instanceof Error ? e.message : 'Something went wrong.');
   }
 
-  async function startDraft() {
+  async function startDraft(sourceVersionId?: number) {
     setBusy(true);
     setError(null);
     try {
-      const result = await api<AdminRubricResponse>('/api/admin/rubric/draft', { method: 'POST' });
+      const result = await api<AdminRubricResponse>('/api/admin/rubric/draft', {
+        method: 'POST',
+        body: sourceVersionId ? { sourceVersionId } : {},
+      });
       queryClient.setQueryData(QUERY_KEY, result);
       if (result.draft) load(result.draft);
       toast(result.published ? 'Draft created from the published rubric.' : 'Draft created.');
@@ -147,13 +150,21 @@ export function RubricManagementPage() {
   const evaluations = data!.evaluations;
   const mixed = evaluations.submittedVersions.length > 1;
 
+  const history = (
+    <RubricHistory
+      versions={data!.versions ?? [published, draft].filter((v): v is RubricVersion => v != null)}
+      activeId={published?.id}
+      canRestore={!draft && !busy}
+      onRestore={(id) => void startDraft(id)}
+    />
+  );
   const header = (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="eyebrow">Administrator</p>
         <h1 className="text-2xl font-bold sm:text-3xl">Rubric Management</h1>
         <p className="mt-1 max-w-2xl text-sm text-black/60">
-          The one rubric every judge uses for every team. Published versions never change; edits go
+          The active rubric is used for new evaluations. Published versions never change; edits go
           into a draft until you publish them.
         </p>
       </div>
@@ -189,17 +200,18 @@ export function RubricManagementPage() {
     return (
       <div className="space-y-6">
         {header}
+        {history}
         {error && <Alert tone="error">{error}</Alert>}
         {mixedWarning}
         {!published ? (
           <Card className="py-12 text-center">
             <p className="text-lg font-semibold">The rubric is not configured yet</p>
             <p className="mx-auto mt-1 max-w-lg text-sm text-black/60">
-              The rubric has 4 sections with 2 criteria each, rated 1 to 5 stars. You name them,
-              describe them and set each section’s share of the score out of 100. Judges can’t score
-              until you publish it.
+              Start with four Actual sections, each with two criteria rated 1 to 5 stars. Add Actual
+              or Bonus sections in the draft. You name them, describe them and set each section’s
+              share of the score out of 100. Judges can’t score until you publish it.
             </p>
-            <Button className="mt-5" onClick={startDraft} disabled={busy}>
+            <Button className="mt-5" onClick={() => void startDraft()} disabled={busy}>
               {busy ? 'Starting…' : 'Start building the rubric'}
             </Button>
           </Card>
@@ -208,7 +220,7 @@ export function RubricManagementPage() {
             <Card className="flex flex-wrap items-center justify-between gap-4">
               <div className="text-sm">
                 <p className="font-semibold">
-                  Version {published.versionNo} is published and in use.
+                  Version {published.versionNo} is active for NEW evaluations.
                 </p>
                 <p className="text-black/60">
                   Published {formatDate(published.publishedAt)}
@@ -217,7 +229,7 @@ export function RubricManagementPage() {
                   it
                 </p>
               </div>
-              <Button onClick={startDraft} disabled={busy}>
+              <Button onClick={() => void startDraft()} disabled={busy}>
                 {busy ? 'Opening…' : 'Edit rubric'}
               </Button>
             </Card>
@@ -240,6 +252,7 @@ export function RubricManagementPage() {
   return (
     <div className="space-y-6 pb-24">
       {header}
+      {history}
       {mixedWarning}
       {conflict && (
         <Alert tone="error" title="This draft was changed somewhere else">
@@ -508,7 +521,9 @@ function PublishDialog({
               <th scope="row" className="py-1.5 text-left font-medium">
                 {i + 1}. {s.title}
               </th>
-              <td className="py-1.5 text-right font-semibold tabular-nums">{s.weightPercent}%</td>
+              <td className="py-1.5 text-right font-semibold tabular-nums">
+                {s.type === 'bonus' ? `Bonus +${s.maxBonusPoints}` : `${s.weightPercent}%`}
+              </td>
             </tr>
           ))}
           <tr>
@@ -567,5 +582,70 @@ function PublishDialog({
         </Button>
       </div>
     </Modal>
+  );
+}
+
+function RubricHistory({
+  versions,
+  activeId,
+  canRestore,
+  onRestore,
+}: {
+  versions: RubricVersion[];
+  activeId?: number;
+  canRestore: boolean;
+  onRestore: (id: number) => void;
+}) {
+  const [preview, setPreview] = useState<RubricVersion | null>(null);
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-lg font-bold">Rubric Version History</h2>
+      <p className="text-sm text-muted">
+        Published versions are preserved even when no evaluations use them. Restoring creates a new
+        draft and never transfers evaluations.
+      </p>
+      {versions.map((v) => (
+        <div
+          key={v.id}
+          className="flex flex-wrap items-center justify-between gap-3 border-t border-line py-3"
+        >
+          <div>
+            <p className="font-semibold">
+              Version {v.versionNo}{' '}
+              <Badge tone={v.id === activeId ? 'green' : 'gray'}>
+                {v.id === activeId
+                  ? 'Active for NEW evaluations'
+                  : v.status === 'draft'
+                    ? 'Unpublished draft'
+                    : 'Historical published version'}
+              </Badge>
+            </p>
+            <p className="text-sm text-muted">
+              {v.publishedAt ? `Published ${formatDate(v.publishedAt)}` : 'Not published'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setPreview(v)}>
+              Preview version {v.versionNo}
+            </Button>
+            {v.status !== 'draft' && (
+              <Button disabled={!canRestore} onClick={() => onRestore(v.id)}>
+                Restore as New Draft
+              </Button>
+            )}
+          </div>
+        </div>
+      ))}
+      {!canRestore && (
+        <p className="text-xs text-muted">
+          Save and publish, or discard the current draft, before restoring another version.
+        </p>
+      )}
+      {preview && (
+        <Modal title={`Preview version ${preview.versionNo}`} onClose={() => setPreview(null)}>
+          <RubricView rubric={contentOf(preview)} />
+        </Modal>
+      )}
+    </Card>
   );
 }

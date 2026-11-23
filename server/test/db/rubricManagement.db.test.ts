@@ -117,10 +117,12 @@ const strip = (v: RubricVersion) => ({
   title: v.title,
   description: v.description,
   instructions: v.instructions,
-  sections: v.sections.map(({ id: _i, criteria, ...s }) => ({
-    ...s,
-    criteria: criteria.map(({ id: _c, ...c }) => c),
-  })),
+  sections: v.sections.map(
+    ({ id: _i, criteria, type: _type, maxBonusPoints: _maxBonusPoints, ...s }) => ({
+      ...s,
+      criteria: criteria.map(({ id: _c, ...c }) => c),
+    }),
+  ),
 });
 
 beforeAll(async () => {

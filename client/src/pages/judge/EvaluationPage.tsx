@@ -5,6 +5,8 @@ import {
   EVALUATION_ERRORS,
   EVALUATION_LIMITS,
   formatScore,
+  maximumScore,
+  sectionMaximum,
   scoreEvaluation,
   type EvaluationDetail,
   type EvaluationInput,
@@ -188,7 +190,7 @@ export function EvaluationPage() {
               <span className="text-3xl font-bold text-ischool-blue-dark">
                 {formatScore(evaluation.totalScore)}
               </span>
-              <span className="text-muted"> / 100</span>
+              <span className="text-muted"> / {maximumScore(rubric.sections)}</span>
             </p>
           </Card>
         ) : (
@@ -215,7 +217,9 @@ export function EvaluationPage() {
           clearBackup(e.id);
           void queryClient.invalidateQueries({ queryKey: ['judge', 'assignments'] });
           document.getElementById('root')?.scrollIntoView?.({ behavior: 'smooth' });
-          toast(`Evaluation submitted. Final score ${formatScore(e.totalScore)} / 100.`);
+          toast(
+            `Evaluation submitted. Final score ${formatScore(e.totalScore)} / ${maximumScore(rubric.sections)}.`,
+          );
         }}
       />
     </div>
@@ -233,7 +237,7 @@ function emptyEvaluation(rubric: RubricVersion): EvaluationDetail {
     rowVersion: 0,
     totalScore: 0,
     ratedCount: 0,
-    requiredCount: 8,
+    requiredCount: rubric.sections.filter((s) => s.type !== 'bonus').length * 2,
     submittedAt: null,
     createdAt: '',
     updatedAt: '',
@@ -284,8 +288,9 @@ export function RubricIntro({
         <p className="whitespace-pre-wrap text-sm text-black/70">{rubric.instructions}</p>
       )}
       <p className="text-xs text-muted">
-        Section score = (rating 1 + rating 2) ÷ 10 × section weight. Final score = the four section
-        scores added together, out of 100.
+        Actual score = (rating 1 + rating 2) / 10 times the section weight. Bonus uses its
+        configured maximum points instead. Leave both Bonus ratings blank for 0 points; complete
+        both if started. Combined maximum: {maximumScore(rubric.sections)}.
       </p>
     </Card>
   );
@@ -363,6 +368,14 @@ export function ScoringForm({
 
   return (
     <div className="space-y-5">
+      <Card>
+        <p className="font-semibold text-ischool-blue-dark">
+          Base: {formatScore(breakdown.base ?? 0)} / 100 | Bonus: +
+          {formatScore(breakdown.bonus ?? 0)} / {maximumScore(rubric.sections) - 100} | Combined:{' '}
+          {breakdown.total == null ? 'Incomplete' : formatScore(breakdown.total)} /{' '}
+          {maximumScore(rubric.sections)}
+        </p>
+      </Card>
       {rubric.sections.map((s, i) => {
         const part = breakdown.sections[i]!;
         return (
@@ -370,9 +383,30 @@ export function ScoringForm({
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-black/5 px-5 py-4 sm:px-6">
               <div className="min-w-0">
                 <p className="text-xs font-semibold tracking-wide text-muted uppercase">
-                  Section {i + 1} · {s.weightPercent}% of the final score
+                  Section {i + 1} |{' '}
+                  {s.type === 'bonus'
+                    ? `Optional Bonus: +${s.maxBonusPoints} maximum`
+                    : `Actual: ${s.weightPercent}% of base`}
                 </p>
                 <h2 className="text-lg font-bold">{s.title}</h2>
+                {s.type === 'bonus' && !readOnly && (
+                  <button
+                    type="button"
+                    className="secondary-link text-sm"
+                    onClick={() =>
+                      onChange?.({
+                        ...input,
+                        ratings: input.ratings.map((r) =>
+                          s.criteria.some((c) => c.id === r.criterionId)
+                            ? { ...r, rating: null }
+                            : r,
+                        ),
+                      })
+                    }
+                  >
+                    Skip bonus (0 points)
+                  </button>
+                )}
                 {s.description && (
                   <p className="mt-1 whitespace-pre-wrap text-sm text-black/65">{s.description}</p>
                 )}
@@ -382,7 +416,7 @@ export function ScoringForm({
                 <span className="text-xl font-bold tabular-nums">
                   {part.score != null ? formatScore(part.score) : '—'}
                 </span>
-                <span className="text-sm text-muted"> / {formatScore(s.weightPercent ?? 0)}</span>
+                <span className="text-sm text-muted"> / {formatScore(sectionMaximum(s))}</span>
               </p>
             </div>
             <ol className="divide-y divide-black/5">
@@ -541,7 +575,14 @@ function EditableEvaluation({
   }
 
   function trySubmit() {
-    const unrated = input.ratings.filter((r) => r.rating == null).map((r) => r.criterionId);
+    const unrated = rubric.sections.flatMap((s) => {
+      const values = s.criteria.map(
+        (c) => input.ratings.find((r) => r.criterionId === c.id)?.rating ?? null,
+      );
+      return s.type === 'bonus' && values.every((v) => v == null)
+        ? []
+        : s.criteria.filter((_, i) => values[i] == null).map((c) => c.id);
+    });
     if (unrated.length) {
       setMissing(new Set(unrated));
       document
@@ -653,11 +694,11 @@ function EditableEvaluation({
                 <>
                   Final score{' '}
                   <strong className="text-ischool-blue-dark">{formatScore(breakdown.total)}</strong>{' '}
-                  / 100
+                  / {maximumScore(rubric.sections)}
                 </>
               ) : (
                 <>
-                  So far <strong>{formatScore(partial)}</strong> / 100
+                  So far <strong>{formatScore(partial)}</strong> / {maximumScore(rubric.sections)}
                 </>
               )}
             </span>
@@ -759,7 +800,7 @@ function SubmitDialog({
                 {s.title}
               </th>
               <td className="py-1.5 text-right tabular-nums">
-                {formatScore(scores[i] ?? 0)} / {formatScore(s.weightPercent ?? 0)}
+                {formatScore(scores[i] ?? 0)} / {formatScore(sectionMaximum(s))}
               </td>
             </tr>
           ))}
@@ -768,7 +809,7 @@ function SubmitDialog({
               Final score
             </th>
             <td className="py-2 text-right text-xl font-bold text-ischool-blue-dark tabular-nums">
-              {formatScore(total)} / 100
+              {formatScore(total)} / {maximumScore(rubric.sections)}
             </td>
           </tr>
         </tbody>

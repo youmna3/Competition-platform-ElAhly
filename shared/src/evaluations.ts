@@ -45,6 +45,9 @@ export interface EvaluationDetail extends EvaluationInput {
   rowVersion: number;
   /** Computed by the server: sum of the sections that are fully rated (all 4 once complete). */
   totalScore: number;
+  baseScore?: number;
+  bonusScore?: number;
+  maximumScore?: number;
   ratedCount: number;
   requiredCount: number;
   submittedAt: string | null;

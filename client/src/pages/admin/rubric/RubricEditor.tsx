@@ -1,5 +1,11 @@
 import { useId } from 'react';
-import { RUBRIC_LIMITS as L, totalWeight, type RubricContent } from '@judging/shared';
+import {
+  RUBRIC_LIMITS as L,
+  totalWeight,
+  formatScore,
+  sectionMaximum,
+  type RubricContent,
+} from '@judging/shared';
 import { StarRating } from '../../../components/StarRating';
 import { Button, Card } from '../../../components/ui';
 import { newKey, type EditCriterion, type EditRubric, type EditSection } from './model';
@@ -200,7 +206,7 @@ export function RubricEditor({
         <div>
           <h2 className="text-lg font-semibold">2. Section weights</h2>
           <p className="text-sm text-muted">
-            How much each section counts toward the final score out of 100. The two criteria in a
+            How much each section counts toward the final score out of 100. All questions in a
             section count equally.
           </p>
         </div>
@@ -239,11 +245,12 @@ export function RubricEditor({
         <div>
           <h2 className="text-lg font-semibold">3. Sections and criteria</h2>
           <p className="text-sm text-muted">
-            Each section has two criteria rated 1 to 5 stars. Actual weights total 100%. Optional
-            Bonus sections add points above 100; leave both stars blank for zero bonus.
+            Each section supports 1 to 10 equally weighted questions rated 1 to 5 stars. Actual
+            weights total 100%. Optional Bonus sections add points above 100; leave both stars blank
+            for zero bonus.
           </p>
         </div>
-        {value.scoringFormat === 2 && (
+        {(value.scoringFormat ?? 1) >= 2 && (
           <Button
             disabled={value.sections.length >= 10}
             onClick={() =>
@@ -291,7 +298,7 @@ export function RubricEditor({
               </span>
             </div>
             <div className="space-y-4 px-5 sm:px-6">
-              {value.scoringFormat === 2 && (
+              {(value.scoringFormat ?? 1) >= 2 && (
                 <div className="flex flex-wrap items-end gap-4">
                   <label className="text-sm font-semibold">
                     Section type
@@ -349,16 +356,115 @@ export function RubricEditor({
                 error={errors.get(`sections.${i}.description`)}
               />
             </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-6">
+              <p className="text-sm text-muted">
+                {s.criteria.length} question{s.criteria.length === 1 ? '' : 's'} · Maximum{' '}
+                {formatScore(sectionMaximum(content.sections[i]!) / Math.max(1, s.criteria.length))}{' '}
+                points per question
+              </p>
+              <Button
+                variant="secondary"
+                disabled={s.criteria.length >= 10}
+                onClick={() =>
+                  onChange({
+                    ...value,
+                    scoringFormat: 3,
+                    sections: value.sections.map((section, k) =>
+                      k !== i
+                        ? section
+                        : {
+                            ...section,
+                            criteria: [
+                              ...section.criteria,
+                              {
+                                key: newKey(),
+                                title: `Question ${section.criteria.length + 1}`,
+                                description: '',
+                                guidelines: '',
+                              },
+                            ],
+                          },
+                    ),
+                  })
+                }
+              >
+                Add Question
+              </Button>
+            </div>
             <div className="grid gap-4 px-5 pb-5 sm:px-6 lg:grid-cols-2">
               {s.criteria.map((c, j) => {
                 const cp = `sections.${i}.criteria.${j}`;
                 return (
                   <div key={c.key} className="space-y-3 rounded-xl border border-black/10 p-4">
+                    <p className="text-xs font-semibold text-ischool-blue-dark">
+                      Maximum contribution:{' '}
+                      {formatScore(sectionMaximum(content.sections[i]!) / s.criteria.length)} points
+                      (equal share)
+                    </p>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-semibold">
                         Criterion {i + 1}.{j + 1}
                       </p>
                       <StarRating label={`Criterion ${i + 1}.${j + 1}`} size={18} />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="ghost"
+                        disabled={j === 0}
+                        aria-label={`Move question ${i + 1}.${j + 1} up`}
+                        onClick={() => {
+                          const criteria = [...s.criteria];
+                          [criteria[j - 1], criteria[j]] = [criteria[j]!, criteria[j - 1]!];
+                          onChange({
+                            ...value,
+                            scoringFormat: 3,
+                            sections: value.sections.map((section, k) =>
+                              k === i ? { ...section, criteria } : section,
+                            ),
+                          });
+                        }}
+                      >
+                        Move up
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={j === s.criteria.length - 1}
+                        aria-label={`Move question ${i + 1}.${j + 1} down`}
+                        onClick={() => {
+                          const criteria = [...s.criteria];
+                          [criteria[j], criteria[j + 1]] = [criteria[j + 1]!, criteria[j]!];
+                          onChange({
+                            ...value,
+                            scoringFormat: 3,
+                            sections: value.sections.map((section, k) =>
+                              k === i ? { ...section, criteria } : section,
+                            ),
+                          });
+                        }}
+                      >
+                        Move down
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={s.criteria.length <= 1}
+                        aria-label={`Remove question ${i + 1}.${j + 1}`}
+                        onClick={() =>
+                          onChange({
+                            ...value,
+                            scoringFormat: 3,
+                            sections: value.sections.map((section, k) =>
+                              k === i
+                                ? {
+                                    ...section,
+                                    criteria: section.criteria.filter((_, n) => n !== j),
+                                  }
+                                : section,
+                            ),
+                          })
+                        }
+                      >
+                        Remove
+                      </Button>
                     </div>
                     <Field
                       label="Criterion title"

@@ -1,3 +1,4 @@
+import { CompetitionSettings } from './CompetitionSettings';
 import { Link } from 'react-router';
 import { Card } from '../../components/ui';
 
@@ -9,6 +10,7 @@ export function SettingsPage() {
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="mt-1 text-sm text-muted">Administrative tools for the judging platform.</p>
       </div>
+      <CompetitionSettings />
       <Card>
         <h2 className="text-lg font-semibold">System health</h2>
         <p className="mt-2 mb-4 text-sm text-muted">Check application and database availability.</p>

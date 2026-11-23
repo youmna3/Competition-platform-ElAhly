@@ -1,3 +1,4 @@
+import { useCompetition } from '../../../components/CompetitionNotice';
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
@@ -34,6 +35,8 @@ const snapshot = (c: RubricContent) => JSON.stringify(c);
 type Dialog = { kind: 'preview' } | { kind: 'publish' } | { kind: 'discard' };
 
 export function RubricManagementPage() {
+  const lifecycle = useCompetition();
+  const rubricLocked = !!lifecycle.data && lifecycle.data.state !== 'preparation';
   const queryClient = useQueryClient();
   const toast = useToast();
   const query = useQuery({
@@ -154,7 +157,7 @@ export function RubricManagementPage() {
     <RubricHistory
       versions={data!.versions ?? [published, draft].filter((v): v is RubricVersion => v != null)}
       activeId={published?.id}
-      canRestore={!draft && !busy}
+      canRestore={!rubricLocked && !draft && !busy}
       onRestore={(id) => void startDraft(id)}
     />
   );
@@ -208,7 +211,11 @@ export function RubricManagementPage() {
               or Bonus sections in the draft. You name them, describe them and set each section’s
               share of the score out of 100. Judges can’t score until you publish it.
             </p>
-            <Button className="mt-5" onClick={() => void startDraft()} disabled={busy}>
+            <Button
+              className="mt-5"
+              onClick={() => void startDraft()}
+              disabled={busy || rubricLocked}
+            >
               {busy ? 'Starting…' : 'Start building the rubric'}
             </Button>
           </Card>
@@ -226,7 +233,7 @@ export function RubricManagementPage() {
                   it
                 </p>
               </div>
-              <Button onClick={() => void startDraft()} disabled={busy}>
+              <Button onClick={() => void startDraft()} disabled={busy || rubricLocked}>
                 {busy ? 'Opening…' : 'Edit rubric'}
               </Button>
             </Card>
@@ -315,7 +322,9 @@ export function RubricManagementPage() {
         )}
       </Card>
 
-      <RubricEditor value={edit} onChange={setEdit} errors={saveErrors} content={content} />
+      <fieldset disabled={rubricLocked}>
+        <RubricEditor value={edit} onChange={setEdit} errors={saveErrors} content={content} />
+      </fieldset>
 
       {/* Sticky action bar */}
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-black/10 bg-white/95 backdrop-blur">
@@ -332,7 +341,7 @@ export function RubricManagementPage() {
               variant="ghost"
               className="!py-2"
               onClick={() => setDialog({ kind: 'discard' })}
-              disabled={busy}
+              disabled={busy || rubricLocked}
             >
               Discard draft
             </Button>
@@ -347,14 +356,14 @@ export function RubricManagementPage() {
               variant="secondary"
               className="!py-2"
               onClick={saveClicked}
-              disabled={busy || !dirty || validation.save.length > 0 || conflict}
+              disabled={busy || rubricLocked || !dirty || validation.save.length > 0 || conflict}
             >
               {busy ? 'Saving…' : 'Save draft'}
             </Button>
             <Button
               className="!py-2"
               onClick={() => setDialog({ kind: 'publish' })}
-              disabled={busy || allIssues.length > 0 || conflict}
+              disabled={busy || rubricLocked || allIssues.length > 0 || conflict}
               title={allIssues.length ? 'Fix the listed problems to publish' : undefined}
             >
               Publish…

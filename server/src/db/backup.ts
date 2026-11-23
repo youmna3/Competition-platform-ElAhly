@@ -216,20 +216,30 @@ export async function restoreDatabase(
   server: MysqlServer,
   file: string,
   database: string,
-  { binDir }: { binDir?: string } = {},
+  { binDir, inPlace = false }: { binDir?: string; inPlace?: boolean } = {},
 ): Promise<void> {
   assertSafeDbName(database);
   await verifyBackupChecksum(file);
   verifyDumpComplete(file);
 
-  const conn = await mysql.createConnection({ ...server, connectTimeout: 5_000 });
-  try {
-    await conn.query(`DROP DATABASE IF EXISTS \`${database}\``);
-    await conn.query(
-      `CREATE DATABASE \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-    );
-  } finally {
-    await conn.end();
+  if (inPlace) {
+    // Accept only single-database dumps produced by our backup command.
+    // Refuse scripts that can redirect the mysql client to a different schema.
+    const sql = readFileSync(file, 'utf8');
+    if (/^\s*(?:USE\b|(?:CREATE|DROP|ALTER)\s+(?:DATABASE|SCHEMA)\b|SOURCE\b|\\[.!])/im.test(sql))
+      throw new Error('In-place restoration refuses database switching or external commands');
+    const conn = await mysql.createConnection({ ...server, database, connectTimeout: 5_000 });
+    await conn.end(); // Existing target is required; never create or drop it.
+  } else {
+    const conn = await mysql.createConnection({ ...server, connectTimeout: 5_000 });
+    try {
+      await conn.query(`DROP DATABASE IF EXISTS \`${database}\``);
+      await conn.query(
+        `CREATE DATABASE \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+      );
+    } finally {
+      await conn.end();
+    }
   }
 
   const binary = resolveMysqlBinary('mysql', binDir);

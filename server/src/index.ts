@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { APP_NAME } from '@judging/shared';
-import { ConfigError, loadConfig } from './config.js';
+import { ConfigError, loadConfig, loadToolConfig } from './config.js';
 import { checkDatabase, createPool } from './db/pool.js';
 import { createApp } from './app.js';
 import { MySqlSessionStore } from './auth/sessionStore.js';
@@ -41,7 +41,15 @@ function start() {
   }, 15 * 60_000);
   cleanup.unref();
 
+  const tools = loadToolConfig();
   const app = createApp({
+    maintenance: {
+      server: { host: config.db.host, port: config.db.port, ...tools.dbAdmin },
+      database: config.db.database,
+      backupDir: tools.backupDir,
+      binDir: tools.mysqlBinDir,
+      executionEnabled: process.env.COMPETITION_RESET_ENABLED === 'true',
+    },
     auth: { pool, config: config.auth, store },
     checkDatabase: () => checkDatabase(pool, config.db, { includeHint: !config.isProduction }),
     environment: config.env,

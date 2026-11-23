@@ -1,3 +1,4 @@
+import { CompetitionNotice } from './CompetitionNotice';
 import { useState, type ComponentProps } from 'react';
 import { NavLink as RouterNavLink, Outlet, useNavigate } from 'react-router';
 import { ROLE_LABELS } from '@judging/shared';
@@ -172,6 +173,7 @@ export function AppLayout() {
         tabIndex={-1}
         className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10"
       >
+        {!restricted && <CompetitionNotice />}
         <Outlet />
       </main>
     </div>

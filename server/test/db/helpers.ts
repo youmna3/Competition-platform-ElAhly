@@ -145,7 +145,7 @@ export function connectTest(): Promise<Connection> {
 export async function restoreTestDatabase(
   file: string,
   name: string,
-  options: { binDir?: string },
+  options: { binDir?: string; inPlace?: boolean },
 ) {
   await claim(name);
   guardTestName(name);

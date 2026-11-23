@@ -195,7 +195,12 @@ function mockApi(
       calls.push(call);
       const { status, body } = (call.url === '/api/auth/me'
         ? { status: 200, body: { user: me } }
-        : handler(call)) ?? {
+        : call.url === '/api/competition'
+          ? {
+              status: 200,
+              body: { state: 'judging_open', rowVersion: 1, lockedRubricVersionNo: 1 },
+            }
+          : handler(call)) ?? {
         status: 404,
         body: { error: { code: 'NOT_FOUND', message: 'nope' } },
       };

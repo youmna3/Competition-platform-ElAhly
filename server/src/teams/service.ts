@@ -28,6 +28,16 @@ export async function inTransaction<T>(
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+    // One lock order for lifecycle transitions, judging writes and maintenance.
+    const [competition] = await conn.query<RowDataPacket[]>(
+      'SELECT state FROM competition WHERE id=1 FOR UPDATE',
+    );
+    if (competition[0]?.state === 'closed')
+      throw new RuleError(
+        409,
+        'COMPETITION_LOCKED',
+        'The competition is Closed. Final results are read-only.',
+      );
     const result = await work(conn);
     await conn.commit();
     return result;
@@ -147,7 +157,7 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
     `SELECT u.id, u.full_name, u.email, u.role, u.status, tj.assigned_at, ab.email AS assigned_by_email,
             e.status AS evaluation_status, e.submitted_at, e.required_scored, e.total_score,
             e.id AS evaluation_id, e.updated_at AS evaluation_updated_at, e.rubric_version_id,
-            v.version_no, (e.rubric_version_id <> r.published_version_id) AS outdated
+            v.version_no, v.scoring_format, (e.rubric_version_id <> r.published_version_id) AS outdated
      FROM team_judges tj
      JOIN users u ON u.id = tj.judge_id
      JOIN rubric r ON r.id = 1
@@ -196,11 +206,13 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
   return {
     ...toSummary(team),
     provisionalAverage: submittedRows.length
-      ? Math.round(
-          (submittedRows.reduce((sum, a) => sum + Number(a.total_score), 0) /
-            submittedRows.length) *
-            1000,
-        ) / 1000
+      ? submittedRows.some((a) => Number(a.scoring_format) === 3)
+        ? submittedRows.reduce((sum, a) => sum + Number(a.total_score), 0) / submittedRows.length
+        : Math.round(
+            (submittedRows.reduce((sum, a) => sum + Number(a.total_score), 0) /
+              submittedRows.length) *
+              1000,
+          ) / 1000
       : null,
     readyForResults:
       assignments.length > 0 &&

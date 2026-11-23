@@ -45,6 +45,7 @@ export async function createAppUser(
     await conn.query(`REVOKE ALL PRIVILEGES, GRANT OPTION FROM ${account}`);
     for (const { name, type } of tables) {
       const table = String(name);
+      if (table.startsWith('maintenance_')) continue;
       const privileges =
         type === 'VIEW' || table === 'schema_migrations'
           ? ['SELECT']

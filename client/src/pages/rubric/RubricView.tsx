@@ -4,7 +4,6 @@ import {
   maximumScore,
   sectionMaximum,
   scoreEvaluation,
-  sectionScore,
   totalWeight,
   type RubricContent,
 } from '@judging/shared';
@@ -56,8 +55,9 @@ export function RubricView({
             How scoring works
           </p>
           <p className="mt-1 text-sm text-black/70">
-            {rubric.sections.length} sections · {rubric.sections.length * 2} criteria · each rated
-            1–5 stars · final score out of <strong>{maximumScore(rubric.sections)}</strong>
+            {rubric.sections.length} sections ·{' '}
+            {rubric.sections.reduce((n, s) => n + s.criteria.length, 0)} criteria · each rated 1–5
+            stars · final score out of <strong>{maximumScore(rubric.sections)}</strong>
           </p>
         </div>
         <ul className="space-y-1 text-sm text-black/70">
@@ -65,14 +65,16 @@ export function RubricView({
           <li>Section score = section rating ÷ 5 × the section’s weight.</li>
           <li>
             Combined score = all Actual section scores plus awarded Bonus points. Untouched Bonus
-            sections award zero; complete both criteria when started.
+            sections award zero; complete all questions when started.
           </li>
         </ul>
         {firstWeight != null && (
           <p className="rounded-xl bg-ahly-gold-light/50 px-3.5 py-2 text-sm text-amber-950">
-            Example: 4★ and 5★ in a {firstWeight}% section give{' '}
-            <strong>{formatPoints(sectionScore([4, 5], firstWeight))}</strong> of its {firstWeight}{' '}
-            points.
+            Each question in the first section contributes up to{' '}
+            <strong>
+              {formatPoints(firstWeight / Math.max(1, rubric.sections[0]!.criteria.length))}
+            </strong>{' '}
+            points. Its section maximum remains {firstWeight} points.
           </p>
         )}
         {weightsSet && (

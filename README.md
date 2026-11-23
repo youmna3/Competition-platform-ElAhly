@@ -106,16 +106,16 @@ use My Teams under the same judging rules. Judges see only their assigned teams,
 the published rubric and the read-only competition leaderboard.
 
 - Legacy rubric versions retain four Actual sections and eight required 1-5 star ratings.
-- New drafts support 1-10 sections, with two 1-5 star criteria per section. Actual
+- New drafts support 1-10 sections, with 1-10 equally weighted 1-5 star questions per section. Actual
   weights are whole percentages totalling exactly 100%; publishing is blocked otherwise.
 - Each Bonus section explicitly configures 1-100 maximum whole points. Bonus does
   not consume Actual weight and is added above 100 without a silent cap.
-- Section points = (rating 1 + rating 2) / 10 x Actual weight or Bonus maximum.
+- Section points = sum of star ratings / (question count x 5) x Actual weight or Bonus maximum.
   Example: base 85/100 + Bonus ratings 3 and 4 with maximum 10 gives +7/10,
   combined 92/110. All fives gives 110/110. Backend calculations are authoritative.
-- Bonus is optional (approved policy for new versions): leave both ratings blank
-  for zero; if started, both must be rated before submission. Skip bonus clears
-  both ratings. Actual ratings remain required. Existing versions are not rescored.
+- Bonus is optional (approved policy for new versions): leave all ratings blank
+  for zero; if started, every question must be rated before submission. Skip bonus clears
+  all ratings. Actual ratings remain required. Existing versions are not rescored.
 - Drafts autosave. Submission locks judge editing. An admin can formally reopen an
   evaluation for the judge to edit and resubmit, retaining its original rubric.
 - Teams are archived instead of deleted. Removed assignments retain past evaluations.
@@ -152,13 +152,22 @@ Publication creates a NEW immutable version; it never overwrites an earlier one 
 moves evaluations. Existing draft and submitted evaluations keep their pinned version.
 
 In an unpublished draft choose **Add section**, then **Actual** or **Bonus**.
-Each new section has two criteria. Add a fifth Actual section by adjusting all
+New sections start with two questions. Use Add Question, Remove and Move up/down to configure 1-10 questions; stable IDs survive reordering. Add a fifth Actual section by adjusting all
 Actual weights back to 100%; the editor shows remaining/excess weight. Configure
 Bonus maximum points separately. Sections can be removed or their type changed
 in a draft. Existing section/criterion database IDs survive draft saves. Restored
 copies receive new IDs in their new version. Mixed-version ranking checks remain.
 Migration 011 adds versioned scoring metadata and publication guards; migrations
 001-010 and existing evaluations are unchanged. Always back up before migrating.
+
+Migration 012 adds scoring format 3 for flexible-question drafts and widens score
+storage to 12 decimal places. It does not rescore existing evaluations or rewrite
+snapshot JSON. Formats 1 and 2 retain their original two-question validation.
+Question maximum contribution is section weight (or Bonus maximum) divided by
+question count. New variable-count calculations do not round intermediate sections.
+Rank comparisons use integer units on a common denominator supporting all counts
+1-10, then compare team averages exactly. Display alone uses two decimals.
+New drafts and restored copies use format 3; older published versions stay immutable.
 
 ### Administrator reports (Phase 9)
 
@@ -290,7 +299,7 @@ Outputs under ignored `artifacts/`:
 The packager uses explicit source/configuration allowlists, sorted paths and fixed ZIP
 timestamps. Identical source produces identical ZIP bytes with the same Node runtime.
 It includes source from all workspaces, manifests, the lockfile, assets, import/test
-fixtures, migrations 001-011, tests, the safe environment example and Markdown docs.
+fixtures, migrations 001-013, tests, the safe environment example and Markdown docs.
 It checks required files even when they have not yet been added to Git.
 
 Real environment files, backups, Git metadata, dependencies, build output, screenshots,
@@ -327,3 +336,97 @@ copy with development dependencies for migrations, backup and recovery. A runtim
 Defaults bind to loopback and plain local HTTP. This cleanup does not enable public
 hosting, network exposure or Phase 10 features. Keep the existing restricted runtime
 DB account and filesystem protection for environment/backup files.
+
+## Competition lifecycle and guarded reset
+
+Open **Settings → Competition lifecycle** as an administrator. New installations and
+migration 013 begin in **Preparation**; existing competition records are retained.
+Publish a valid rubric, finish/discard any draft, add active teams and assign at least
+one active judge to every active team. Three judges per team are supported; smaller
+existing panels are also supported. Resolve assigned evaluations using other rubric
+versions before starting. Starting requires confirmation and locks the currently
+published rubric. Every new evaluation uses that version. During **Judging Open**,
+judges can save/submit, and administrators can correct each submitted evaluation with
+a reason and immutable Before/After history, or reopen it through the audited workflow.
+Rubric publication, activation, restoration and draft management are locked.
+
+**Close competition** requires confirmation. Closing is one-way: judging, administrative
+corrections, reopening, team/assignment and account management are blocked. Leaderboard,
+reports and evaluation history remain readable. Backend transactions enforce lifecycle
+rules and serialize transitions with evaluation writes. Reset is the only application
+workflow that returns a closed competition to Preparation.
+
+**Settings → Danger Zone → Reset Competition** is available only to the active
+administrator `youmna54@gmail.com`. The password is verified afresh for both preview and
+execution, with rate limiting. Preview locks competition records briefly, creates a full
+SQL backup with routines/triggers, verifies completion and SHA-256, and shows deletion
+counts. Projects are stored on teams, so their preview count equals the team count.
+All other users (including other administrators), teams, assignments, evaluations,
+notes/ratings, submission and correction histories, audit events and rubric versions
+are deleted only after the exact phrase `RESET JUDGING PLATFORM` and a separate final
+confirmation. Governorate lookup data, singleton settings, schema/migrations, triggers
+and constraints remain. The preserved administrator keeps the same password hash,
+role and account identity; all sessions are invalidated and sign-in is required again.
+
+Reset execution is **disabled by default**, including on the real database. Do not enable
+it until the owner has explicitly approved the reviewed backup and deletion preview.
+After approval, an operator can set `$env:COMPETITION_RESET_ENABLED='true'` in the server's
+PowerShell session and restart the application. Remove that process variable and restart
+to disable execution again. This does not require editing any credentials or `.env` file.
+Preview tokens expire after ten minutes, are bound to the requesting login session and
+become invalid on server restart. Any competition data/credential/schema change requires
+a new preview and backup; record counts alone are not trusted. Do not make edits between
+preview and execution.
+
+Maintenance uses the configured database endpoint/name plus a database-specific instance
+identity; request bodies cannot choose a target. An unexpected table or non-InnoDB table
+causes refusal until reviewed. The dedicated `reset_competition` procedure runs inside a
+verified maintenance transaction with child-first deletion. Definer-owned, connection-bound
+maintenance context permits just that transaction to delete otherwise protected rows.
+It never disables triggers/foreign keys, truncates tables or drops/recreates the database.
+A failure rolls back both data and maintenance authorization. The normal runtime account
+must have **no access** to `maintenance_*` tables and **no EXECUTE** grant on the reset
+procedure. Run the existing `db:app-user` command after migrations to refresh least-privilege
+grants; do not grant database-wide privileges to that account. Maintenance needs the
+existing `DB_ADMIN_USER`/`DB_ADMIN_PASSWORD` tool configuration (falling back to `DB_USER`),
+and working `mysqldump`/`mysql` binaries. No credentials are exposed to the browser.
+
+Backups and an append-only external `maintenance.jsonl` log are stored below
+`BACKUP_DIR/competition-maintenance`, outside web assets/source packages. On Windows the
+folder ACL is restricted to the process user, SYSTEM and Administrators; on POSIX it is
+owner-only. Failure to secure or durably write the log prevents deletion. Preserve this
+folder on durable storage. Entries include the target instance, requester, counts and
+backup checksum, never passwords. A crash between `commit_pending` and `completed` needs
+operator reconciliation: inspect the preserved backup, lifecycle version and row counts;
+do not automatically retry or reset. The external log is intentionally not cleared.
+
+### Restore a reset backup on Windows
+
+Stop the API and all writers. Keep both the `.sql` file and its `.sha256` sidecar; never
+edit either. Test restoration in an isolated database first. After approving recovery,
+run from the project root (replace the path with the reviewed backup):
+
+```powershell
+npm run db:restore -- --in-place "D:\path\to\reviewed-backup.sql"
+```
+
+Type the configured database name when prompted. The tool verifies the checksum,
+creates a separate pre-restore safety backup, and restores tables/routines/triggers into
+the existing configured database without dropping/recreating the database itself.
+Restoration involves DDL and is not atomic: keep the application stopped until it has
+completed successfully. It restores the backup's lifecycle and data, including user
+accounts. Before restarting the API, select the restored application database in
+phpMyAdmin, open its SQL tab, and invalidate the restored sessions:
+
+```sql
+START TRANSACTION;
+UPDATE sessions SET expires = 0, data = NULL;
+UPDATE users SET session_epoch = session_epoch + 1;
+COMMIT;
+```
+
+These statements preserve password hashes and roles. If import fails, keep writers
+stopped and recover from the verified backup rather than continuing with a partial
+schema. Preserve the external maintenance log throughout recovery. Restart the API,
+sign in again and check lifecycle, teams, evaluation history and reports before
+allowing judging to resume.

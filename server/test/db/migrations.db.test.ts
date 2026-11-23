@@ -16,11 +16,14 @@ import {
 
 const EXPECTED_TABLES = [
   'audit_log',
+  'competition',
   'evaluation_events',
   'evaluation_scores',
   'evaluation_section_notes',
   'evaluations',
   'governorates',
+  'maintenance_reset_context',
+  'maintenance_reset_permits',
   'rubric',
   'rubric_criteria',
   'rubric_scale_levels',

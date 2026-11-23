@@ -40,7 +40,7 @@ const section = z
 
 const content = z
   .object({
-    scoringFormat: z.union([z.literal(1), z.literal(2)]).optional(),
+    scoringFormat: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     title: text(L.title),
     description: text(L.description),
     instructions: text(L.instructions),

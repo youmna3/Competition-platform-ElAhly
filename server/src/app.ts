@@ -1,3 +1,5 @@
+import { CompetitionReset, type MaintenanceOptions } from './competition/reset.js';
+import { competitionStatus } from './competition/service.js';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import express, { type Express } from 'express';
@@ -19,6 +21,7 @@ import { adminRouter, judgeRouter } from './routes/protected.js';
 import { apiNotFound, errorHandler, requestLogger } from './middleware/errors.js';
 
 export interface AppOptions {
+  maintenance?: MaintenanceOptions;
   checkDatabase: () => Promise<DatabaseHealth>;
   environment: string;
   version: string;
@@ -89,7 +92,16 @@ export function createApp(options: AppOptions): Express {
       }),
     );
     app.use('/api/auth', authRouter(pool, config));
-    app.use('/api/admin', adminRouter(pool));
+    app.get('/api/competition', requireAuth, async (_req, res) =>
+      res.json(await competitionStatus(pool)),
+    );
+    app.use(
+      '/api/admin',
+      adminRouter(
+        pool,
+        options.maintenance ? new CompetitionReset(options.maintenance) : undefined,
+      ),
+    );
     app.use('/api/judge', judgeRouter(pool));
   }
   app.use('/api', apiNotFound);

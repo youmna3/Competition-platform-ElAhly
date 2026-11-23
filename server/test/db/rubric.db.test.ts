@@ -191,10 +191,10 @@ describe('publishing', () => {
 
     const { version, criteria, sections } = await validDraft(2);
     await c().query('DELETE FROM rubric_criteria WHERE id = ?', [criteria[1]]);
-    await expectRefused(publish(c(), version), /exactly 2 criteria/);
+    await expectRefused(publish(c(), version), /valid question count/);
     await addCriterion(c(), version, sections[0]!, { position: 2, min: 1, max: 5, weight: 2.5 });
     await addCriterion(c(), version, sections[0]!, { position: 3, min: 1, max: 5, weight: 2.5 });
-    await expectRefused(publish(c(), version), /exactly 2 criteria/);
+    await expectRefused(publish(c(), version), /valid question count/);
   });
 
   it('refuses missing weights and weights that do not total exactly 100%', async () => {
@@ -227,7 +227,7 @@ describe('publishing', () => {
   it('refuses bonus sections', async () => {
     const { version, sections } = await validDraft(1);
     await c().query('UPDATE rubric_sections SET is_bonus = TRUE WHERE id = ?', [sections[0]]);
-    await expectRefused(publish(c(), version), /exactly 2 criteria/);
+    await expectRefused(publish(c(), version), /valid question count/);
   });
 
   it('publishes a valid draft with uneven weights and clears the draft pointer', async () => {

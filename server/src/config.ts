@@ -155,8 +155,8 @@ export function loadConfig(envFile = resolve(process.cwd(), '.env')): AppConfig 
 }
 
 // ---------------------------------------------------------------------------
-// Settings used only by the command-line database tools (migrate, seed,
-// backup, restore, app-user). The running API never needs these.
+// Settings for database tools and the guarded competition maintenance service.
+// Ordinary API requests continue to use the separate runtime pool/account.
 // ---------------------------------------------------------------------------
 
 const toolSchema = z.object({

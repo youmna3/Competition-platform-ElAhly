@@ -1,3 +1,4 @@
+import { competitionStatus, requireCompetitionState } from '../competition/service.js';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import {
   EVALUATION_ERRORS,
@@ -163,8 +164,14 @@ export async function getJudgeEvaluation(
   const evaluation = evaluationId == null ? null : await loadEvaluation(db, evaluationId);
   const rubric = evaluation ? await loadVersion(db, evaluation.rubricVersionId) : published;
 
-  let readOnlyReason: string | null = null;
-  if (evaluation?.status === 'submitted') {
+  const lifecycle = await competitionStatus(db);
+  let readOnlyReason: string | null =
+    lifecycle.state === 'judging_open'
+      ? null
+      : lifecycle.state === 'closed'
+        ? 'The competition is Closed. Final results are read-only.'
+        : 'Judging has not opened. Please wait for the administrator to start the competition.';
+  if (!readOnlyReason && evaluation?.status === 'submitted') {
     readOnlyReason = 'Submitted and locked. Only an administrator can reopen it.';
   } else if (team.status !== 'active') {
     readOnlyReason = 'This team has been archived, so it can no longer be evaluated.';
@@ -208,7 +215,8 @@ function computeScores(rubric: RubricVersion, ratingOf: Map<number, number | nul
     0,
   );
   return {
-    total: breakdown.total ?? Math.round(partial * 1000) / 1000,
+    total:
+      breakdown.total ?? (rubric.scoringFormat === 3 ? partial : Math.round(partial * 1000) / 1000),
     base,
     bonus,
     complete: breakdown.total != null,
@@ -344,11 +352,12 @@ export function checkInput(rubric: RubricVersion, input: EvaluationInput) {
 /** Starts (or reopens the existing) evaluation for an assigned team. Safe to repeat. */
 export function startEvaluation(pool: Pool, actor: Actor, teamId: number) {
   return inTransaction(pool, async (conn) => {
+    await requireCompetitionState(conn, 'judging_open');
     const team = await teamFor(conn, actor.id, teamId, true);
     const existing = await evaluationIdFor(conn, teamId, actor.id);
     if (existing != null) return (await loadEvaluation(conn, existing))!;
     if (team.status !== 'active') throw archived();
-    const publishedId = await publishedVersionId(conn);
+    const publishedId = (await competitionStatus(conn)).lockedRubricVersionId;
     if (publishedId == null) {
       throw new RuleError(
         409,
@@ -435,6 +444,7 @@ export function saveEvaluation(
   input: EvaluationInput,
 ) {
   return inTransaction(pool, async (conn) => {
+    await requireCompetitionState(conn, 'judging_open');
     const { row, team, staleVersion } = await lockOwn(conn, actor, id, rowVersion);
     if (row.status !== 'draft') throw locked();
     if (team.status !== 'active') throw archived();
@@ -503,6 +513,7 @@ export function submitEvaluation(
   rowVersion: number,
 ): Promise<SubmitEvaluationResponse> {
   return inTransaction(pool, async (conn) => {
+    await requireCompetitionState(conn, 'judging_open');
     const { row, team, staleVersion } = await lockOwn(conn, actor, id, rowVersion);
     if (row.status === 'submitted') {
       return { evaluation: (await loadEvaluation(conn, id))!, alreadySubmitted: true };
@@ -569,9 +580,12 @@ export function submitEvaluation(
 
 /** The judge has seen that their evaluation was reopened (clears the notice). */
 export async function acknowledgeReopen(pool: Pool, actor: Actor, id: number) {
-  await pool.query(
-    `UPDATE evaluations SET reopen_notice_pending = FALSE
+  await inTransaction(pool, async (conn) => {
+    await requireCompetitionState(conn, 'judging_open');
+    await conn.query(
+      `UPDATE evaluations SET reopen_notice_pending = FALSE
      WHERE id = ? AND judge_id = ? AND status = 'draft' AND reopen_notice_pending = TRUE`,
-    [id, actor.id],
-  );
+      [id, actor.id],
+    );
+  });
 }

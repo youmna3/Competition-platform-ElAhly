@@ -45,7 +45,10 @@ runScript(async () => {
   });
   console.log(`OK  safety backup of current data: ${basename(safety.file)}`);
 
-  await restoreDatabase(server, file, database, { binDir: config.mysqlBinDir });
+  await restoreDatabase(server, file, database, {
+    binDir: config.mysqlBinDir,
+    inPlace: hasFlag('--in-place'),
+  });
   console.log(`OK  restored "${database}" from ${basename(file)}`);
   return 0;
 });

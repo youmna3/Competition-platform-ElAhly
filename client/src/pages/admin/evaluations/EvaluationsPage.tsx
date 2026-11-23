@@ -1,3 +1,4 @@
+import { useCompetition } from '../../../components/CompetitionNotice';
 import { useEffect, useState, type ReactNode } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, NavLink, useSearchParams } from 'react-router';
@@ -58,6 +59,8 @@ export function EvaluationsHeader({ children }: { children?: ReactNode }) {
 }
 
 function JudgeLine({ j, teamId }: { j: AdminEvaluationJudge; teamId: number }) {
+  const lifecycle = useCompetition();
+  const canCorrect = lifecycle.data?.state === 'judging_open';
   const label = (
     <>
       <span className="font-medium">{j.fullName}</span>
@@ -90,7 +93,7 @@ function JudgeLine({ j, teamId }: { j: AdminEvaluationJudge; teamId: number }) {
       )}
       {j.reopenedCount > 0 && <Badge tone="red">Reopened ×{j.reopenedCount}</Badge>}
       {j.accountStatus === 'disabled' && <Badge tone="gray">Disabled</Badge>}
-      {j.status === 'submitted' && j.evaluationId != null && (
+      {canCorrect && j.status === 'submitted' && j.evaluationId != null && (
         <Link
           to={`/admin/evaluations/${j.evaluationId}?edit=1&teamId=${teamId}`}
           className="action-link !min-h-9 !px-3 !py-1.5 !text-xs"

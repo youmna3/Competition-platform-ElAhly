@@ -20,6 +20,7 @@ export const TEAM_COMPLETION_LABELS: Record<TeamCompletion, string> = {
 };
 
 export interface AdminEvaluationJudge {
+  scoringFormat?: number;
   judgeId: number;
   fullName: string;
   email: string;
@@ -101,6 +102,7 @@ export interface AdminEvaluationDetail {
   reopen: ReopenInfo | null;
   lastAdminCorrection?: { at: string; byEmail: string | null } | null;
   canReopen: boolean;
+  canCorrect?: boolean;
   reopenBlockedReason: string | null;
 }
 

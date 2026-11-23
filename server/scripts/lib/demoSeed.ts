@@ -107,6 +107,11 @@ export interface DemoSeedResult {
 }
 
 export async function seedPhase8Demo(pool: Pool, password: string): Promise<DemoSeedResult> {
+  const [[target]] = (await pool.query('SELECT DATABASE() AS name')) as unknown as [
+    { name: string }[],
+  ];
+  if (!target || !(/_demo$/.test(target.name) || /^jptest_.*_test$/.test(target.name)))
+    throw new Error('Demo fixtures require an isolated demo or test database.');
   const hash = await bcrypt.hash(password, 10);
   const ids = {} as Record<AccountKey, number>;
   for (const a of DEMO_ACCOUNTS) {
@@ -133,9 +138,16 @@ export async function seedPhase8Demo(pool: Pool, password: string): Promise<Demo
   }
 
   async function publish(weights: number[], title: string) {
+    // Historical fixture import; the normal lifecycle API never allows this transition.
+    await pool.query(
+      "UPDATE competition SET state='preparation',locked_rubric_version_id=NULL WHERE id=1",
+    );
     const state = await createDraft(pool, admin);
     const saved = await saveDraft(pool, admin, state.draft!.revision, rubric(weights, title));
     await publishDraft(pool, admin, saved.revision, true);
+    await pool.query(
+      "UPDATE competition c JOIN rubric r ON r.id=c.id SET c.state='judging_open',c.locked_rubric_version_id=r.published_version_id WHERE c.id=1",
+    );
   }
   const assign = (codes: TeamCode[], judges: AccountKey[]) =>
     bulkAssign(

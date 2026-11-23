@@ -1,3 +1,4 @@
+import { competitionStatus, requireCompetitionState } from '../competition/service.js';
 import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import {
   REOPEN_REASON,
@@ -75,7 +76,9 @@ function summarise(team: RowDataPacket, judges: AdminEvaluationJudge[]): AdminTe
     pending: judges.length - submitted.length,
     completion,
     provisionalAverage: submitted.length
-      ? round3(submitted.reduce((sum, j) => sum + (j.totalScore ?? 0), 0) / submitted.length)
+      ? (submitted.some((j) => j.scoringFormat === 3) ? (n: number) => n : round3)(
+          submitted.reduce((sum, j) => sum + (j.totalScore ?? 0), 0) / submitted.length,
+        )
       : null,
     versions,
     mixedVersions: versions.length > 1,
@@ -105,7 +108,7 @@ export async function listTeamEvaluations(
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT tj.team_id, u.id, u.full_name, u.email, u.role, u.status AS account_status,
             e.id AS evaluation_id, e.status, e.required_scored, e.total_score, e.submitted_at, e.updated_at,
-            e.reopened_count, v.version_no
+            e.reopened_count, v.version_no, v.scoring_format
      FROM team_judges tj
      JOIN users u ON u.id = tj.judge_id
      LEFT JOIN evaluations e ON e.team_id = tj.team_id AND e.judge_id = tj.judge_id
@@ -116,6 +119,7 @@ export async function listTeamEvaluations(
   for (const r of rows) {
     const list = byTeam.get(Number(r.team_id)) ?? [];
     list.push({
+      ...(Number(r.scoring_format) === 3 ? { scoringFormat: 3 } : {}),
       judgeId: Number(r.id),
       fullName: String(r.full_name),
       email: String(r.email),
@@ -249,7 +253,11 @@ export async function getAdminEvaluation(db: Db, id: number): Promise<AdminEvalu
       'The team is archived, so it can no longer be evaluated. Reactivate it first.';
   }
 
+  const lifecycle = await competitionStatus(db);
+  if (lifecycle.state !== 'judging_open')
+    reopenBlockedReason = 'Judging must be open to correct or reopen evaluations.';
   return {
+    canCorrect: lifecycle.state === 'judging_open' && evaluation.status === 'submitted',
     team: {
       id: Number(row.team_id),
       teamCode: String(row.team_code),
@@ -335,6 +343,7 @@ export function correctSubmission(
   reason: string,
 ) {
   return inTransaction(pool, async (conn) => {
+    await requireCompetitionState(conn, 'judging_open');
     const [admins] = await conn.query<RowDataPacket[]>(
       'SELECT role, status FROM users WHERE id = ? FOR UPDATE',
       [actor.id],
@@ -449,6 +458,7 @@ export function reopenEvaluation(pool: Pool, actor: Actor, id: number, rawReason
     );
   }
   return inTransaction(pool, async (conn) => {
+    await requireCompetitionState(conn, 'judging_open');
     const [rows] = await conn.query<RowDataPacket[]>(
       `SELECT e.id, e.team_id, e.judge_id, e.status, e.total_score, e.required_scored, e.rubric_version_id, e.row_version,
               t.team_code, t.status AS team_status, u.email, u.status AS account_status,

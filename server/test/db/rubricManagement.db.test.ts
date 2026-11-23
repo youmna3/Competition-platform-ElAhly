@@ -544,7 +544,8 @@ describe('changes after publishing', () => {
       'SELECT e.rubric_version_id, e.total_score, s.score FROM evaluations e JOIN evaluation_scores s ON s.evaluation_id = e.id WHERE e.id = ?',
       [evaluationId],
     );
-    expect(rows[0]).toMatchObject({ rubric_version_id: v1.id, total_score: '8.000', score: 4 });
+    expect(rows[0]).toMatchObject({ rubric_version_id: v1.id, score: 4 });
+    expect(Number(rows[0]!.total_score)).toBe(8);
     // Version 1 keeps its original weights.
     const [crit] = await pool.query<RowDataPacket[]>(
       'SELECT c.weight, s.weight_percent FROM rubric_criteria c JOIN rubric_sections s ON s.id = c.section_id WHERE c.id = ?',

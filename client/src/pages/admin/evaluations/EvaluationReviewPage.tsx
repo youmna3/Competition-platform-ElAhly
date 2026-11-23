@@ -1,3 +1,4 @@
+import { useCompetition } from '../../../components/CompetitionNotice';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router';
@@ -256,6 +257,8 @@ function ReopenDialog({
 }
 
 export function EvaluationReviewPage() {
+  const lifecycle = useCompetition();
+  const lifecycleBlocked = !!lifecycle.data && lifecycle.data.state !== 'judging_open';
   const { id } = useParams();
   const { user } = useAuth();
   const toast = useToast();
@@ -323,7 +326,7 @@ export function EvaluationReviewPage() {
           This evaluation is excluded from official rankings.
         </Alert>
       )}
-      {editing && e.status === 'submitted' && (
+      {editing && e.status === 'submitted' && d.canCorrect !== false && !lifecycleBlocked && (
         <EditSubmission
           key={e.id}
           detail={d}
@@ -345,14 +348,19 @@ export function EvaluationReviewPage() {
           </h1>
         </div>
         {e.status === 'submitted' && (
-          <Button onClick={() => setEditing(true)}>Edit Submission</Button>
+          <Button
+            disabled={d.canCorrect === false || lifecycleBlocked}
+            onClick={() => setEditing(true)}
+          >
+            Edit Submission
+          </Button>
         )}
         {e.status === 'submitted' && (
           <Button
             variant="secondary"
             className="!text-ahly-red-dark"
             onClick={() => setReopening(true)}
-            disabled={!d.canReopen}
+            disabled={!d.canReopen || lifecycleBlocked}
           >
             Reopen…
           </Button>

@@ -51,3 +51,5 @@ export * from './evaluations.js';
 export * from './review.js';
 export * from './results.js';
 export * from './reports.js';
+
+export * from './competition.js';

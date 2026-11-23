@@ -46,6 +46,9 @@ it('restores old versions, retains stable draft IDs and scores three independent
     t.insertId,
     actor.id,
   ]);
+  await pool.query(
+    "UPDATE competition c JOIN rubric r ON r.id=c.id SET c.state='judging_open',c.locked_rubric_version_id=r.published_version_id WHERE c.id=1",
+  );
   let old = await startEvaluation(pool, actor, t.insertId);
   old = await saveEvaluation(pool, actor, old.id, old.rowVersion, {
     ratings: old.ratings.map((r) => ({ ...r, rating: 4 })),
@@ -59,6 +62,9 @@ it('restores old versions, retains stable draft IDs and scores three independent
     [old.id],
   );
 
+  await pool.query(
+    "UPDATE competition SET state='preparation',locked_rubric_version_id=NULL WHERE id=1",
+  );
   state = await createDraft(pool, actor);
   const newer = contentOf(state.draft!);
   newer.sections.forEach((s) => (s.weightPercent = 20));
@@ -90,6 +96,10 @@ it('restores old versions, retains stable draft IDs and scores three independent
   expect(state.versions!.map((v) => v.id)).toContain(v2.id);
   expect(state.draft!.sections[0]!.weightPercent).toBe(25);
   expect(state.draft!.sections[0]!.id).not.toBe(v1.sections[0]!.id);
+  // Legacy fixture import: keep the restored draft unpublished while evaluating v2.
+  await pool.query(
+    "UPDATE competition c JOIN rubric r ON r.id=c.id SET c.state='judging_open',c.locked_rubric_version_id=r.published_version_id WHERE c.id=1",
+  );
   // Keep restored draft unpublished. New evaluations still use version 2.
   const [team] = await pool.query<ResultSetHeader>(
     "INSERT INTO teams(team_code,name,project_name) VALUES ('BONUS','Bonus team','Bonus Project')",
@@ -345,6 +355,9 @@ it('rejects partial or invalid bonus submissions and invalid restored draft weig
   await expect(saveEvaluation(pool, actor, e.id, e.rowVersion, input)).rejects.toMatchObject({
     status: 400,
   });
+  await pool.query(
+    "UPDATE competition SET state='preparation',locked_rubric_version_id=NULL WHERE id=1",
+  );
   const state = await getAdminRubric(pool),
     content = contentOf(state.draft!);
   content.sections[0]!.weightPercent = 24;

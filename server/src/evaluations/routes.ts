@@ -28,7 +28,7 @@ export const saveSchema = z
           })
           .strict(),
       )
-      .max(20),
+      .max(100),
     sectionNotes: z
       .array(z.object({ sectionId: id, note: z.string().max(L.sectionNote * 2) }).strict())
       .max(10),

@@ -1,13 +1,13 @@
 /**
- * Versioned rubric types, scoring, the scoring formula and
- * the validation rules. Shared by the server (which enforces and recomputes)
+ * Versioned rubric types, scoring and validation rules. Shared by the server (which enforces and recomputes)
  * and the browser (which shows the same results and messages live).
  *
  * Legacy format 1 retains exactly 4 Actual sections × 2 required criteria.
  * Format 2 permits 1–10 Actual/Bonus sections with two 1–5 star criteria each.
- * Actual weights total 100; optional Bonus uses explicitly configured points.
+ * Format 3 permits 1-10 equal questions per section. Actual weights total 100;
+ * optional Bonus uses explicitly configured points.
  *
- *   section rating = (rating 1 + rating 2) / 2
+ *   section rating = sum of star ratings / question count
  *   section score  = section rating / 5 × section weight
  *   combined score = Actual section sum + awarded Bonus, without a cap at 100
  */
@@ -65,10 +65,10 @@ export interface RubricSectionInput {
   criteria: RubricCriterionInput[];
 }
 
-/** Everything the admin configures. Always 4 sections of 2 criteria, in order. */
+/** Versioned configuration; array order defines section and question order. */
 export interface RubricContent {
   /** Absent/1: immutable legacy four-section scoring. 2: dynamic Actual + optional Bonus. */
-  scoringFormat?: 1 | 2;
+  scoringFormat?: 1 | 2 | 3;
   title: string;
   description: string;
   instructions: string;
@@ -150,7 +150,7 @@ export const RUBRIC_ERRORS = {
 } as const;
 
 /**
- * A brand-new rubric: the fixed shape with neutral placeholder names and no
+ * A starter rubric: four sections with two placeholder questions each and no
  * weights. Nothing about the competition's criteria is invented.
  */
 export function defaultRubricContent(): RubricContent {
@@ -200,7 +200,10 @@ export function totalWeight(sections: ScoringSection[]): number {
   return sections.reduce((sum, s) => sum + (s.type === 'bonus' ? 0 : (s.weightPercent ?? 0)), 0);
 }
 
-export type ScoringSection = Pick<RubricSectionInput, 'weightPercent' | 'type' | 'maxBonusPoints'>;
+export type ScoringSection = Pick<
+  RubricSectionInput,
+  'weightPercent' | 'type' | 'maxBonusPoints'
+> & { criteria?: readonly unknown[] };
 export const sectionMaximum = (s: ScoringSection) =>
   s.type === 'bonus' ? (s.maxBonusPoints ?? 0) : (s.weightPercent ?? 0);
 export const maximumScore = (sections: ScoringSection[]) =>
@@ -228,7 +231,7 @@ export interface ScoreBreakdown {
   maximum: number;
   /** Per section, in order; rating and score are null while a rating is missing. */
   sections: { rating: number | null; score: number | null; weightPercent: number }[];
-  /** Out of 100; null until every criterion is rated. */
+  /** Combined points; null until Actual and started Bonus sections are complete. */
   total: number | null;
 }
 
@@ -240,30 +243,35 @@ export function scoreEvaluation(
   sections: ScoringSection[],
   ratings: (number | null)[][],
 ): ScoreBreakdown {
+  const variable = sections.some((s) => s.criteria != null && s.criteria.length !== 2);
+  const round = (n: number) => (variable ? n : Math.round(n * 1000) / 1000);
   const result = sections.map((s, i) => {
     const r = ratings[i] ?? [];
     const weightPercent = sectionMaximum(s);
-    if (s.type === 'bonus' && r.length === 2 && r.every((v) => v == null))
+    const count = s.criteria?.length ?? 2;
+    if (s.type === 'bonus' && count > 0 && r.length === count && r.every((v) => v == null))
       return { rating: null, score: 0, weightPercent };
-    const complete = r.length === RUBRIC_SHAPE.criteriaPerSection && r.every(isStarRating);
+    const complete = count >= 1 && count <= 10 && r.length === count && r.every(isStarRating);
     return complete
       ? {
           rating: sectionRating(r as number[]),
-          score: sectionScore(r as number[], weightPercent),
+          score: round(
+            (r.reduce<number>((sum, v) => sum + (v ?? 0), 0) * weightPercent) / (count * 5),
+          ),
           weightPercent,
         }
       : { rating: null, score: null, weightPercent };
   });
   const total = result.every((s) => s.score != null)
-    ? Math.round(result.reduce((sum, s) => sum + (s.score ?? 0), 0) * 1000) / 1000
+    ? round(result.reduce((sum, s) => sum + (s.score ?? 0), 0))
     : null;
   const sumType = (bonus: boolean) =>
-    Math.round(
+    round(
       result.reduce(
         (sum, s, i) => sum + ((sections[i]?.type === 'bonus') === bonus ? (s.score ?? 0) : 0),
         0,
-      ) * 1000,
-    ) / 1000;
+      ),
+    );
   return {
     sections: result,
     total,
@@ -336,7 +344,10 @@ export function validateRubric(rubric: RubricContent): RubricValidation {
       message: `The rubric must have exactly ${RUBRIC_SHAPE.sections} sections.`,
     });
   }
-  if (rubric.scoringFormat === 2 && (rubric.sections.length < 1 || rubric.sections.length > 10))
+  if (
+    (rubric.scoringFormat ?? 1) >= 2 &&
+    (rubric.sections.length < 1 || rubric.sections.length > 10)
+  )
     save.push({ path: 'sections', message: 'Use between 1 and 10 sections.' });
   if (!rubric.sections.some((s) => s.type !== 'bonus'))
     publish.push({ path: 'weights', message: 'At least one Actual section is required.' });
@@ -355,7 +366,7 @@ export function validateRubric(rubric: RubricContent): RubricValidation {
       L.sectionDescription,
     );
     if (s.type === 'bonus') {
-      if (rubric.scoringFormat !== 2)
+      if ((rubric.scoringFormat ?? 1) < 2)
         save.push({ path, message: 'Bonus sections require scoring format 2.' });
       if (s.weightPercent != null)
         save.push({
@@ -391,10 +402,17 @@ export function validateRubric(rubric: RubricContent): RubricValidation {
         message: `The weight of ${name} must be a whole number from 1 to 100.`,
       });
     }
-    if (s.criteria.length !== RUBRIC_SHAPE.criteriaPerSection) {
+    if (
+      rubric.scoringFormat === 3
+        ? s.criteria.length < 1 || s.criteria.length > 10
+        : s.criteria.length !== RUBRIC_SHAPE.criteriaPerSection
+    ) {
       save.push({
         path: `${path}.criteria`,
-        message: `${name} must have exactly ${RUBRIC_SHAPE.criteriaPerSection} criteria.`,
+        message:
+          rubric.scoringFormat === 3
+            ? `${name} must have 1 to 10 questions.`
+            : `${name} must have exactly ${RUBRIC_SHAPE.criteriaPerSection} criteria.`,
       });
     }
     s.criteria.forEach((c, j) => {

@@ -42,7 +42,9 @@ describe('XAMPP MySQL connection', () => {
     });
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(200);
-    expect(res.body.database.status).toBe('ok');
+    expect(res.body.status).toBe('ok');
+    expect(res.body.database).toBeUndefined();
+    expect(res.body.app).toBeUndefined();
   });
 });
 

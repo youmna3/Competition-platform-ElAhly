@@ -24,7 +24,7 @@ export interface EditSection {
 }
 
 export interface EditRubric {
-  scoringFormat?: 1 | 2;
+  scoringFormat?: 1 | 2 | 3;
   title: string;
   description: string;
   instructions: string;

@@ -59,6 +59,15 @@ async function inTransaction<T>(
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+    const [competition] = await conn.query<RowDataPacket[]>(
+      'SELECT state FROM competition WHERE id=1 FOR UPDATE',
+    );
+    if (competition[0]?.state === 'closed')
+      throw new RuleError(
+        409,
+        'COMPETITION_LOCKED',
+        'The competition is Closed. Account management is read-only.',
+      );
     const result = await work(conn);
     await conn.commit();
     return result;

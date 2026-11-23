@@ -1,3 +1,4 @@
+import { useCompetition } from '../../components/CompetitionNotice';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
@@ -41,6 +42,7 @@ function matrix(rubric: RubricVersion, input: EvaluationInput) {
 }
 
 export function EvaluationPage() {
+  const lifecycle = useCompetition();
   const { teamId } = useParams();
   const queryKey = ['judge', 'evaluation', teamId];
   const queryClient = useQueryClient();
@@ -100,7 +102,18 @@ export function EvaluationPage() {
       </div>
     );
   }
-  const data = query.data;
+  const phase = lifecycle.data?.state;
+  const lifecycleBlocked = phase === 'preparation' || phase === 'closed';
+  const data = lifecycleBlocked
+    ? {
+        ...query.data,
+        canEdit: false,
+        readOnlyReason:
+          phase === 'closed'
+            ? 'The competition is Closed. Final results are read-only.'
+            : 'Judging has not opened.',
+      }
+    : query.data;
   const { team, rubric, evaluation } = data;
   const outdated =
     evaluation != null &&
@@ -179,8 +192,7 @@ export function EvaluationPage() {
             <div>
               <p className="font-semibold text-emerald-800">Submitted and locked</p>
               <p className="text-sm text-black/65">
-                Submitted {formatDateTime(evaluation.submittedAt!)}. Only an administrator can
-                reopen it.
+                Submitted {formatDateTime(evaluation.submittedAt!)}. {data.readOnlyReason}
               </p>
             </div>
             <p className="text-right">
@@ -237,7 +249,9 @@ function emptyEvaluation(rubric: RubricVersion): EvaluationDetail {
     rowVersion: 0,
     totalScore: 0,
     ratedCount: 0,
-    requiredCount: rubric.sections.filter((s) => s.type !== 'bonus').length * 2,
+    requiredCount: rubric.sections
+      .filter((s) => s.type !== 'bonus')
+      .reduce((n, s) => n + s.criteria.length, 0),
     submittedAt: null,
     createdAt: '',
     updatedAt: '',
@@ -288,9 +302,9 @@ export function RubricIntro({
         <p className="whitespace-pre-wrap text-sm text-black/70">{rubric.instructions}</p>
       )}
       <p className="text-xs text-muted">
-        Actual score = (rating 1 + rating 2) / 10 times the section weight. Bonus uses its
-        configured maximum points instead. Leave both Bonus ratings blank for 0 points; complete
-        both if started. Combined maximum: {maximumScore(rubric.sections)}.
+        Actual score = sum of ratings / (question count times 5) times the section weight. Bonus
+        uses its configured maximum points instead. Leave all Bonus ratings blank for 0 points;
+        complete all if started. Combined maximum: {maximumScore(rubric.sections)}.
       </p>
     </Card>
   );

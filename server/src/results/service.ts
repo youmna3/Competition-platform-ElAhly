@@ -9,7 +9,6 @@ import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import {
   rankTeams,
   scoreEvaluation,
-  toThousandths,
   type DashboardResponse,
   type EvaluationProgress,
   type JudgeResult,
@@ -134,6 +133,7 @@ async function buildSnapshot(db: Db): Promise<Snapshot> {
         weightPercent: s.weight,
         type: s.type,
         maxBonusPoints: s.maxBonusPoints,
+        criteria: s.scores,
       })),
       ordered.map((s) => s.scores),
     );
@@ -180,7 +180,7 @@ async function buildSnapshot(db: Db): Promise<Snapshot> {
     if (result.status === 'ready') {
       sums.set(
         team.id,
-        judges.reduce((sum, j) => sum + toThousandths(j.score!), 0),
+        judges.reduce((sum, j) => sum + Math.round(j.score! * 63000), 0),
       );
     }
     return result;
@@ -267,7 +267,7 @@ function assess(
     pending: judges.length - submitted.length,
     versions,
     provisionalAverage: scored.length
-      ? scored.reduce((sum, j) => sum + toThousandths(j.score!), 0) / 1000 / scored.length
+      ? scored.reduce((sum, j) => sum + Math.round(j.score! * 63000), 0) / 63000 / scored.length
       : null,
     baseAverage: scored.length
       ? scored.reduce((n, j) => n + (j.baseScore ?? 0), 0) / scored.length
@@ -285,6 +285,7 @@ function rank(teams: TeamResult[], sums: Map<number, number>): RankedTeam[] {
   return rankTeams(
     teams.map((team) => ({
       sumThousandths: sums.get(team.teamId)!,
+      scale: 63000,
       judges: team.assignedJudges,
       tieOrder: team.teamCode,
       team,
@@ -572,7 +573,7 @@ export async function getDashboard(pool: Pool): Promise<DashboardResponse> {
       pending: all.length - submitted.length,
       completionPercent: all.length ? (submitted.length / all.length) * 100 : null,
       averageSubmittedScore: scored.length
-        ? scored.reduce((sum, j) => sum + toThousandths(j.score!), 0) / 1000 / scored.length
+        ? scored.reduce((sum, j) => sum + Math.round(j.score! * 63000), 0) / 63000 / scored.length
         : null,
       judgesWithPending: judgeList.filter((j) => j.pending > 0).length,
       teamsWaiting: teamStatus.not_started + teamStatus.in_progress,

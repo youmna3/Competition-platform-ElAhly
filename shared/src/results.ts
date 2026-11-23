@@ -181,13 +181,14 @@ export interface DashboardResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * Scores are stored with at most 3 decimals, so a team's average is exactly
- * (sum of thousandths) / (number of judges). Comparing a/b with c/d by
- * cross-multiplying integers avoids any floating-point rounding: two teams tie
- * only when their averages are exactly equal, never because they round alike.
+ * Rank input uses integer point units. Legacy callers default to thousandths;
+ * official results use 63,000 units per point, an exact common denominator for
+ * 1-10 equally weighted questions and legacy thousandths. Integer cross-products
+ * compare judge averages without rounding or floating-point tie errors.
  */
 export interface RankInput {
-  /** Sum of the judges' scores in thousandths of a point (an integer). */
+  scale?: number;
+  /** Sum of judges' scores in integer units defined by scale. */
   sumThousandths: number;
   judges: number;
   /** Deterministic display order among exact ties (does not affect the rank). */
@@ -198,7 +199,10 @@ export const toThousandths = (score: number) => Math.round(score * 1000);
 
 export function compareAverages(a: RankInput, b: RankInput): number {
   // Positive when b's average is higher (so sort puts the highest first).
-  return b.sumThousandths * a.judges - a.sumThousandths * b.judges;
+  const difference =
+    BigInt(b.sumThousandths) * BigInt(a.judges) * BigInt(a.scale ?? 1000) -
+    BigInt(a.sumThousandths) * BigInt(b.judges) * BigInt(b.scale ?? 1000);
+  return difference > 0n ? 1 : difference < 0n ? -1 : 0;
 }
 
 /** Sorts highest first and assigns competition ranks (1, 1, 3). */
@@ -215,7 +219,7 @@ export function rankTeams<T extends RankInput>(
     out.push({
       ...item,
       rank: tied ? prev.rank : i + 1,
-      average: item.sumThousandths / 1000 / item.judges,
+      average: item.sumThousandths / (item.scale ?? 1000) / item.judges,
     });
   });
   return out;

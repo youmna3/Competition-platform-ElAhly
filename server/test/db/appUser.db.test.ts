@@ -46,6 +46,20 @@ afterAll(async () => {
 });
 
 describe('least-privilege runtime account', () => {
+  it('cannot authorize or call a maintenance reset', async () => {
+    await expectRefused(app.query('SELECT * FROM maintenance_reset_context'), /denied/i);
+    await expectRefused(
+      app.query('INSERT INTO maintenance_reset_context VALUES(CONNECTION_ID(),?)', [
+        'a'.repeat(64),
+      ]),
+      /denied/i,
+    );
+    await expectRefused(app.query('SELECT * FROM maintenance_reset_permits'), /denied/i);
+    await expectRefused(
+      app.query('CALL reset_competition(?,?,?,?)', [TEST_DB, 'wrong', 'a'.repeat(64), 1]),
+      /denied/i,
+    );
+  });
   it('can read data and the rubric status view', async () => {
     const [rows] = await app.query('SELECT state FROM v_rubric_status');
     expect((rows as { state: string }[])[0]?.state).toBe('not_configured');

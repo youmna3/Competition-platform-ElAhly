@@ -1,3 +1,4 @@
+import { requireCompetitionState } from '../competition/service.js';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import {
   RUBRIC_ERRORS,
@@ -49,7 +50,7 @@ export async function loadVersion(db: Db, id: number): Promise<RubricVersion | n
   );
   return {
     id: Number(v.id),
-    scoringFormat: Number(v.scoring_format) === 2 ? 2 : 1,
+    scoringFormat: Number(v.scoring_format) === 3 ? 3 : Number(v.scoring_format) === 2 ? 2 : 1,
     versionNo: Number(v.version_no),
     status: v.status as RubricVersionStatus,
     revision: Number(v.revision),
@@ -155,6 +156,7 @@ export async function getPublishedRubric(db: Db): Promise<RubricVersion | null> 
 // Writing (drafts only: the database refuses changes to published versions)
 // ---------------------------------------------------------------------------
 
+const safelyCount = (n: number) => Math.max(1, n);
 const orNull = (s: string) => (s.trim() ? s : null);
 
 async function writeVersionFields(
@@ -163,7 +165,7 @@ async function writeVersionFields(
   c: RubricContent,
   actor: Actor,
 ) {
-  // The fixed shape in Phase 1 terms: a 1-5 scale, no bonus, a maximum of 100.
+  // The base target stays 100; bonus points and question counts belong to this version.
   await conn.query(
     `UPDATE rubric_versions SET title = ?, description = ?, instructions = ?,
        scoring_format = ?, scale_min = ?, scale_max = ?, bonus_policy = ?, bonus_cap = NULL,
@@ -176,7 +178,7 @@ async function writeVersionFields(
       c.scoringFormat ?? 1,
       RUBRIC_SHAPE.minStars,
       RUBRIC_SHAPE.maxStars,
-      c.scoringFormat === 2 ? 'add_to_total' : 'separate',
+      (c.scoringFormat ?? 1) >= 2 ? 'add_to_total' : 'separate',
       RUBRIC_SHAPE.maxScore,
       actor.id,
       id,
@@ -185,9 +187,8 @@ async function writeVersionFields(
 }
 
 /**
- * Replaces the sections and criteria of a draft. Each criterion is a required
- * 1-5 star rating whose weight is its section's percentage / 10, so that
- * rating x weight summed over the section's two criteria is the section score.
+ * Upserts draft structure using owned stable IDs. Criterion weight is derived
+ * from section points / (question count * 5), never manually configured.
  */
 async function writeStructure(conn: PoolConnection, id: number, c: RubricContent) {
   const [oldSections] = await conn.query<RowDataPacket[]>(
@@ -254,7 +255,7 @@ async function writeStructure(conn: PoolConnection, id: number, c: RubricContent
         orNull(cr.guidelines),
         1,
         5,
-        points == null ? 1 : points / 10,
+        points == null ? 1 : points / (safelyCount(section.criteria.length) * 5),
         !bonus,
       ];
       if (cr.id != null) {
@@ -331,6 +332,7 @@ async function lockDraft(conn: PoolConnection, revision: number) {
 /** Starts a draft: empty when nothing is published, otherwise a copy of the published version. */
 export function createDraft(pool: Pool, actor: Actor, sourceVersionId?: number) {
   return inTransaction(pool, async (conn) => {
+    await requireCompetitionState(conn, 'preparation');
     const p = await pointers(conn, true);
     if (p.draftId != null) {
       throw new RuleError(
@@ -358,7 +360,7 @@ export function createDraft(pool: Pool, actor: Actor, sourceVersionId?: number) 
     );
     const content = base ? contentOf(base) : defaultRubricContent();
     // A restored version is a NEW editable format. Original versions and evaluations stay untouched.
-    content.scoringFormat = 2;
+    content.scoringFormat = 3;
     for (const section of content.sections) {
       delete section.id;
       for (const criterion of section.criteria) delete criterion.id;
@@ -383,6 +385,7 @@ export function saveDraft(pool: Pool, actor: Actor, revision: number, content: R
   const { save } = validateRubric(content);
   if (save.length) throw invalid(save, false);
   return inTransaction(pool, async (conn) => {
+    await requireCompetitionState(conn, 'preparation');
     const { draftId, versionNo } = await lockDraft(conn, revision);
     await writeVersionFields(conn, draftId, content, actor);
     await writeStructure(conn, draftId, content);
@@ -401,6 +404,7 @@ export function saveDraft(pool: Pool, actor: Actor, revision: number, content: R
 
 export function discardDraft(pool: Pool, actor: Actor, revision: number) {
   return inTransaction(pool, async (conn) => {
+    await requireCompetitionState(conn, 'preparation');
     const { draftId, versionNo } = await lockDraft(conn, revision);
     await conn.query('UPDATE rubric SET draft_version_id = NULL WHERE id = 1');
     // Drafts are never used by evaluations, so nothing else refers to them.
@@ -425,6 +429,7 @@ export function discardDraft(pool: Pool, actor: Actor, revision: number) {
  */
 export function publishDraft(pool: Pool, actor: Actor, revision: number, confirmExisting: boolean) {
   return inTransaction(pool, async (conn) => {
+    await requireCompetitionState(conn, 'preparation');
     const { draftId, publishedId, versionNo } = await lockDraft(conn, revision);
     const draft = (await loadVersion(conn, draftId))!;
     const content = contentOf(draft);

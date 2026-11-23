@@ -263,7 +263,7 @@ export function EditSubmission({
       </p>
       {!complete && (
         <Alert tone="warning">
-          Complete all Actual ratings and both criteria in any Bonus section you start, or choose
+          Complete all Actual ratings and all questions in any Bonus section you start, or choose
           Skip bonus.
         </Alert>
       )}

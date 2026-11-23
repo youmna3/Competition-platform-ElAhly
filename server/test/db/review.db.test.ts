@@ -69,6 +69,10 @@ function rubricContent(weights: number[], title = 'Final rubric'): RubricContent
 }
 
 async function publishRubric(weights = [30, 30, 20, 20], title?: string) {
+  // Legacy fixture imports deliberately span historical versions.
+  await pool.query(
+    "UPDATE competition SET state='preparation',locked_rubric_version_id=NULL WHERE id=1",
+  );
   const state = (await admin.get('/api/admin/rubric')).body;
   const draft = state.draft ?? (await admin.post('/api/admin/rubric/draft').send({})).body.draft;
   const saved = await admin
@@ -78,6 +82,9 @@ async function publishRubric(weights = [30, 30, 20, 20], title?: string) {
     .post('/api/admin/rubric/draft/publish')
     .send({ revision: saved.body.draft.revision, confirmExistingEvaluations: true });
   expect(res.status, JSON.stringify(res.body)).toBe(200);
+  await pool.query(
+    "UPDATE competition c JOIN rubric r ON r.id=c.id SET c.state='judging_open',c.locked_rubric_version_id=r.published_version_id WHERE c.id=1",
+  );
 }
 
 async function assign(teamIds: number[], judgeIds: number[]) {
@@ -140,6 +147,9 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await pool.query(
+    "UPDATE competition SET state='preparation',locked_rubric_version_id=NULL WHERE id=1",
+  );
   await pool.query('SET FOREIGN_KEY_CHECKS = 0');
   for (const t of [
     'evaluation_events',

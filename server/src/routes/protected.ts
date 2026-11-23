@@ -1,3 +1,5 @@
+import { competitionRouter } from '../competition/routes.js';
+import type { CompetitionReset } from '../competition/reset.js';
 import { Router } from 'express';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import type { AdminOverview, JudgeAssignment, RubricState } from '@judging/shared';
@@ -12,9 +14,10 @@ import { judgeLeaderboardRouter, resultsRouter } from '../results/routes.js';
 import { reportsRouter } from '../reports/routes.js';
 
 /** GET /api/admin/* — administrators only. */
-export function adminRouter(pool: Pool): Router {
+export function adminRouter(pool: Pool, maintenance?: CompetitionReset): Router {
   const router = Router();
   router.use(requireAuth, requireRole('admin'));
+  router.use('/competition', competitionRouter(pool, maintenance));
   router.use('/reports', reportsRouter(pool));
   router.use('/users', usersRouter(pool));
   router.use('/rubric', rubricAdminRouter(pool));

@@ -202,7 +202,7 @@ describe('Rubric Management', () => {
     expect(screen.getAllByText('Weight not set')).toHaveLength(4);
     // Five-star previews for every criterion, and no way to add or remove sections.
     expect(screen.getAllByRole('img', { name: /rated from 1 to 5 stars/ })).toHaveLength(8);
-    expect(screen.queryByRole('button', { name: /Add section|Remove/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Add Question' })).toHaveLength(4);
   });
 
   it('shows the weight total live and blocks publishing until it is 100%', async () => {
@@ -280,7 +280,7 @@ describe('Rubric Management', () => {
     renderAt('/admin/rubric');
     await userEvent.click(await screen.findByRole('button', { name: 'Preview' }));
     const preview = await screen.findByRole('dialog', { name: 'Preview' });
-    expect(within(preview).getByText(/4★ and 5★ in a 30% section give/)).toBeInTheDocument();
+    expect(within(preview).getByText(/Its section maximum remains 30 points/)).toBeInTheDocument();
     const groups = within(preview).getAllByRole('radiogroup');
     expect(groups).toHaveLength(8);
     await userEvent.click(within(groups[0]!).getByRole('radio', { name: '4 stars' }));

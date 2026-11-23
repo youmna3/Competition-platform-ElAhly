@@ -170,8 +170,16 @@ describe('leaderboard', () => {
       '1Tied',
       '3',
     ]);
-    expect(within(rows[2]!).getByText('80.33 / 100')).toBeInTheDocument();
-    expect(within(rows[0]!).getByText('85.00 / 100')).toBeInTheDocument();
+    expect(
+      within(rows[2]!).getByText(
+        (_, el) => el?.tagName === 'TD' && /^80\.33\s*\/\s*100/.test(el.textContent ?? ''),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(rows[0]!).getByText(
+        (_, el) => el?.tagName === 'TD' && /^85\.00\s*\/\s*100/.test(el.textContent ?? ''),
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText(/administrators only · not public/)).toBeInTheDocument();
   });
 
@@ -307,7 +315,11 @@ describe('authenticated competition leaderboard', () => {
     const table = await screen.findByRole('table', { name: 'Official ranking' });
     expect(within(table).getAllByRole('row')).toHaveLength(4);
     expect(within(table).getAllByText('Tied')).toHaveLength(2);
-    expect(within(table).getByText('80.33 / 100')).toBeInTheDocument();
+    expect(
+      within(table).getByText(
+        (_, el) => el?.tagName === 'TD' && /^80\.33\s*\/\s*100/.test(el.textContent ?? ''),
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByText('Judge One:')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Detailed results' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Team AHL-1' })).not.toBeInTheDocument();

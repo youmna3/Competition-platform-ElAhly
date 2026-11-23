@@ -6,6 +6,7 @@ import {
   EVALUATION_ERRORS,
   EVALUATION_LIMITS,
   formatScore,
+  isPointsRubric,
   maximumScore,
   sectionMaximum,
   scoreEvaluation,
@@ -18,6 +19,7 @@ import {
 import { ApiError, api } from '../../api/client';
 import { FullPageSpinner } from '../../components/FullPageSpinner';
 import { Modal } from '../../components/Modal';
+import { MiniBar, PointsInput, PointsValue } from '../../components/PointsInput';
 import { StarRating } from '../../components/StarRating';
 import { useToast } from '../../components/Toast';
 import { Alert, Badge, Button, Card } from '../../components/ui';
@@ -128,10 +130,32 @@ export function EvaluationPage() {
           Last administrator correction: {formatDateTime(evaluation.adminModifiedAt)}.
         </Alert>
       )}
-      <Card className="grid gap-4 sm:grid-cols-3">
-        <Info label="Team ID" value={team.teamCode} />
-        <Info label="Team" value={team.name} />
-        <Info label="Project" value={team.projectName} />
+      <Card className="judging-header flex flex-wrap items-center justify-between gap-4 border-ischool-blue/20">
+        <div className="min-w-0">
+          <p className="eyebrow">Evaluating</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">{team.name}</h1>
+          <p className="mt-1 text-sm text-muted">
+            <span className="font-medium text-ink">{team.projectName}</span> · Team ID{' '}
+            <span className="font-mono">{team.teamCode}</span>
+          </p>
+        </div>
+        {evaluation && (
+          <Badge
+            tone={
+              evaluation.status === 'submitted'
+                ? 'green'
+                : evaluation.reopenedCount
+                  ? 'red'
+                  : 'gold'
+            }
+          >
+            {evaluation.status === 'submitted'
+              ? 'Submitted'
+              : evaluation.reopenedCount
+                ? 'Reopened · draft'
+                : 'Draft'}
+          </Badge>
+        )}
       </Card>
       {outdated && (
         <Alert tone="warning" title="This evaluation uses an older rubric version">
@@ -161,7 +185,7 @@ export function EvaluationPage() {
     return (
       <div className="space-y-6">
         {header}
-        <RubricIntro rubric={rubric} />
+        <RubricIntro rubric={rubric} nested />
         <Card className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="font-semibold">Ready to evaluate {team.name}?</p>
@@ -208,7 +232,7 @@ export function EvaluationPage() {
         ) : (
           <Alert tone="warning">{data.readOnlyReason}</Alert>
         )}
-        <RubricIntro rubric={rubric} />
+        <RubricIntro rubric={rubric} nested />
         <ScoringForm rubric={rubric} input={inputOf(evaluation)} readOnly />
       </div>
     );
@@ -217,7 +241,7 @@ export function EvaluationPage() {
   return (
     <div className="space-y-6 pb-28">
       {header}
-      <RubricIntro rubric={rubric} />
+      <RubricIntro rubric={rubric} nested />
       <EditableEvaluation
         key={evaluation.id}
         rubric={rubric}
@@ -292,23 +316,46 @@ export function RubricIntro({
   nested?: boolean;
 }) {
   const Heading = nested ? 'h2' : 'h1';
+  const points = isPointsRubric(rubric);
   return (
-    <Card className="space-y-2">
-      <p className="text-xs font-semibold tracking-wide text-muted uppercase">
-        Rubric · version {rubric.versionNo}
-      </p>
+    <Card className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="eyebrow">Rubric · version {rubric.versionNo}</span>
+        <Badge tone="blue">{points ? 'Points scoring' : 'Star scoring'}</Badge>
+      </div>
       <Heading className="text-xl font-bold sm:text-2xl">{rubric.title}</Heading>
       {rubric.instructions && (
         <p className="whitespace-pre-wrap text-sm text-black/70">{rubric.instructions}</p>
       )}
-      <p className="text-xs text-muted">
-        Actual score = sum of ratings / (question count times 5) times the section weight. Bonus
-        uses its configured maximum points instead. Leave all Bonus ratings blank for 0 points;
-        complete all if started. Combined maximum: {maximumScore(rubric.sections)}.
-      </p>
+      {points ? (
+        <ul className="flex flex-wrap gap-2 text-sm" aria-label="Section points">
+          {rubric.sections.map((s, i) => (
+            <li
+              key={s.id}
+              className="rounded-full border border-line bg-white px-3 py-1 font-medium text-ink"
+            >
+              <span className="font-bold text-ischool-blue-dark">{sectionCode(rubric, i)}</span>{' '}
+              {s.title} · {sectionMaximum(s)} pts
+            </li>
+          ))}
+          <li className="rounded-full bg-ischool-blue px-3 py-1 font-semibold text-white">
+            Total {maximumScore(rubric.sections)} pts
+          </li>
+        </ul>
+      ) : (
+        <p className="text-xs text-muted">
+          Actual score = sum of ratings / (question count times 5) times the section weight. Bonus
+          uses its configured maximum points instead. Leave all Bonus ratings blank for 0 points;
+          complete all if started. Combined maximum: {maximumScore(rubric.sections)}.
+        </p>
+      )}
     </Card>
   );
 }
+
+/** "A", "B", … for points rubrics; "1", "2", … for star rubrics. */
+export const sectionCode = (rubric: { scoringFormat?: number | null }, i: number) =>
+  isPointsRubric(rubric) ? String.fromCharCode(65 + i) : String(i + 1);
 
 // ---------------------------------------------------------------------------
 // The form itself (editable or read-only)
@@ -321,6 +368,7 @@ function NoteField({
   maxLength,
   readOnly,
   rows = 2,
+  collapsible = false,
 }: {
   label: string;
   value: string;
@@ -328,7 +376,22 @@ function NoteField({
   maxLength: number;
   readOnly?: boolean;
   rows?: number;
+  /** Show a small "Add note" button until the field is used. */
+  collapsible?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  if (collapsible && !readOnly && !value && !open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded-lg px-2 py-1 text-xs font-semibold text-ischool-blue-dark hover:bg-ischool-blue-soft"
+        aria-label={`Add ${label.replace(' (optional)', '').toLowerCase()}`}
+      >
+        + Add note
+      </button>
+    );
+  }
   if (readOnly) {
     return value ? (
       <div className="rounded-xl bg-black/[0.03] px-3.5 py-2.5 text-sm">
@@ -344,6 +407,7 @@ function NoteField({
         value={value}
         maxLength={maxLength}
         rows={rows}
+        autoFocus={collapsible && open}
         onChange={(e) => onChange?.(e.target.value)}
         className="block w-full rounded-xl border border-black/15 bg-white px-3.5 py-2 text-base shadow-sm outline-none focus:border-ischool-blue focus:ring-4 focus:ring-ischool-blue/15 sm:text-sm"
       />
@@ -365,9 +429,22 @@ export function ScoringForm({
   /** Criterion ids to highlight as still unrated. */
   missing?: Set<number>;
 }) {
-  const breakdown = scoreEvaluation(rubric.sections, matrix(rubric, input));
+  const points = isPointsRubric(rubric);
+  const values = matrix(rubric, input);
+  const breakdown = scoreEvaluation(rubric.sections, values);
   const rating = new Map(input.ratings.map((r) => [r.criterionId, r]));
   const sectionNote = new Map(input.sectionNotes.map((n) => [n.sectionId, n.note]));
+  const max = maximumScore(rubric.sections);
+  const rated = input.ratings.filter((r) => r.rating != null).length;
+  const enteredTotal = values.flat().reduce<number>((n, v) => n + (v ?? 0), 0);
+  // Points: subtotals include every point entered so far; stars: completed sections only.
+  const subtotal = (i: number) =>
+    points
+      ? values[i]!.reduce<number>((n, v) => n + (v ?? 0), 0)
+      : (breakdown.sections[i]!.score ?? null);
+  const shownTotal = breakdown.total ?? (points ? enteredTotal : null);
+  // Points are whole numbers: show "24", not "24.00". Stars keep two decimals.
+  const fmt = (n: number) => (points ? String(n) : formatScore(n));
 
   const setRating = (criterionId: number, patch: { rating?: number | null; note?: string }) =>
     onChange?.({
@@ -382,77 +459,194 @@ export function ScoringForm({
 
   return (
     <div className="space-y-5">
-      <Card>
-        <p className="font-semibold text-ischool-blue-dark">
-          Base: {formatScore(breakdown.base ?? 0)} / 100 | Bonus: +
-          {formatScore(breakdown.bonus ?? 0)} / {maximumScore(rubric.sections) - 100} | Combined:{' '}
-          {breakdown.total == null ? 'Incomplete' : formatScore(breakdown.total)} /{' '}
-          {maximumScore(rubric.sections)}
-        </p>
+      <Card className="score-summary space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="eyebrow">{readOnly ? 'Scores' : 'Scoring'}</p>
+            <p className="mt-1 flex items-baseline gap-1.5" aria-live="polite">
+              <span className="text-4xl font-bold text-ischool-blue-dark tabular-nums">
+                {shownTotal == null ? '—' : fmt(shownTotal)}
+              </span>
+              <span className="text-lg font-semibold text-muted">/ {max}</span>
+              {breakdown.total == null && (
+                <span className="ml-2 text-sm font-medium text-muted">
+                  {points ? 'so far' : 'incomplete'}
+                </span>
+              )}
+            </p>
+            {!points && (
+              <p className="mt-1 text-sm text-muted">
+                Base {formatScore(breakdown.base ?? 0)} / 100 · Bonus +
+                {formatScore(breakdown.bonus ?? 0)} / {max - 100}
+              </p>
+            )}
+          </div>
+          <p className="text-sm font-semibold text-ink">
+            {rated} of {input.ratings.length} criteria scored
+          </p>
+        </div>
+        <MiniBar
+          value={rated}
+          max={input.ratings.length}
+          label="Criteria scored"
+          tone={rated === input.ratings.length ? 'green' : 'blue'}
+        />
+        <nav aria-label="Sections" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {rubric.sections.map((s, i) => {
+            const done = values[i]!.every((v) => v != null);
+            const sub = subtotal(i);
+            return (
+              <a
+                key={s.id}
+                href={`#section-${s.id}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  document
+                    .getElementById(`section-${s.id}`)
+                    ?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+                }}
+                className="flex items-center gap-3 rounded-xl border border-line bg-white px-3 py-2.5 transition hover:border-ischool-blue/40 hover:bg-ischool-blue-soft"
+              >
+                <span
+                  className={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${
+                    done
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-ischool-blue-soft text-ischool-blue-dark'
+                  }`}
+                  aria-hidden
+                >
+                  {done ? '✓' : sectionCode(rubric, i)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-ink">{s.title}</span>
+                  <span className="block text-xs text-muted tabular-nums">
+                    {sub == null ? '—' : fmt(sub)} / {fmt(sectionMaximum(s))}
+                    {done ? ' · complete' : ''}
+                  </span>
+                </span>
+              </a>
+            );
+          })}
+        </nav>
       </Card>
       {rubric.sections.map((s, i) => {
-        const part = breakdown.sections[i]!;
+        const sub = subtotal(i);
+        const sectionMax = sectionMaximum(s);
         return (
-          <Card key={s.id} className="!p-0">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-black/5 px-5 py-4 sm:px-6">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold tracking-wide text-muted uppercase">
-                  Section {i + 1} |{' '}
-                  {s.type === 'bonus'
-                    ? `Optional Bonus: +${s.maxBonusPoints} maximum`
-                    : `Actual: ${s.weightPercent}% of base`}
+          <Card key={s.id} className="scroll-mt-28 !p-0" id={`section-${s.id}`}>
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-6">
+              <div className="flex min-w-0 gap-4">
+                <span
+                  className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl border-b-[3px] border-ahly-red bg-ischool-blue text-lg font-bold text-white shadow-sm"
+                  aria-hidden
+                >
+                  {sectionCode(rubric, i)}
+                </span>
+                <div className="min-w-0">
+                  <p className="eyebrow">
+                    {points
+                      ? `Section ${sectionCode(rubric, i)} · ${sectionMax} points`
+                      : s.type === 'bonus'
+                        ? `Section ${i + 1} · Optional bonus +${s.maxBonusPoints}`
+                        : `Section ${i + 1} · ${s.weightPercent}% of base`}
+                  </p>
+                  <h2 className="text-lg font-bold sm:text-xl">{s.title}</h2>
+                  {s.description && (
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-black/65">
+                      {s.description}
+                    </p>
+                  )}
+                  {s.type === 'bonus' && !readOnly && (
+                    <button
+                      type="button"
+                      className="secondary-link mt-2 text-sm"
+                      onClick={() =>
+                        onChange?.({
+                          ...input,
+                          ratings: input.ratings.map((r) =>
+                            s.criteria.some((c) => c.id === r.criterionId)
+                              ? { ...r, rating: null }
+                              : r,
+                          ),
+                        })
+                      }
+                    >
+                      Skip bonus (0 points)
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="w-full shrink-0 space-y-1.5 sm:w-36 sm:text-right" aria-live="polite">
+                <p className="text-xs font-semibold text-muted uppercase">Section score</p>
+                <p className="tabular-nums">
+                  <span className="text-2xl font-bold text-ink">
+                    {sub != null ? fmt(sub) : '—'}
+                  </span>
+                  <span className="text-sm font-semibold text-muted"> / {fmt(sectionMax)}</span>
                 </p>
-                <h2 className="text-lg font-bold">{s.title}</h2>
-                {s.type === 'bonus' && !readOnly && (
-                  <button
-                    type="button"
-                    className="secondary-link text-sm"
-                    onClick={() =>
-                      onChange?.({
-                        ...input,
-                        ratings: input.ratings.map((r) =>
-                          s.criteria.some((c) => c.id === r.criterionId)
-                            ? { ...r, rating: null }
-                            : r,
-                        ),
-                      })
-                    }
-                  >
-                    Skip bonus (0 points)
-                  </button>
-                )}
-                {s.description && (
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-black/65">{s.description}</p>
+                {points && (
+                  <MiniBar value={sub ?? 0} max={sectionMax} label={`${s.title} points`} />
                 )}
               </div>
-              <p className="shrink-0 text-right" aria-live="polite">
-                <span className="block text-xs text-muted">Section score</span>
-                <span className="text-xl font-bold tabular-nums">
-                  {part.score != null ? formatScore(part.score) : '—'}
-                </span>
-                <span className="text-sm text-muted"> / {formatScore(sectionMaximum(s))}</span>
-              </p>
             </div>
-            <ol className="divide-y divide-black/5">
+            <ol className="divide-y divide-line">
               {s.criteria.map((c, j) => {
                 const r = rating.get(c.id);
                 const isMissing = missing?.has(c.id) ?? false;
+                const code = `${sectionCode(rubric, i)}.${j + 1}`;
                 return (
                   <li
                     key={c.id}
                     id={`criterion-${c.id}`}
-                    className={`space-y-2 px-5 py-4 sm:px-6 ${isMissing ? 'bg-red-50/70 ring-2 ring-ahly-red/40 ring-inset' : ''}`}
+                    className={`grid gap-x-6 gap-y-3 px-5 py-5 sm:px-6 md:grid-cols-[minmax(0,1fr)_auto] ${
+                      isMissing ? 'bg-red-50/70 ring-2 ring-ahly-red/40 ring-inset' : ''
+                    }`}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <p className="font-semibold">
-                        {i + 1}.{j + 1} {c.title}
+                    <div className="min-w-0 space-y-2">
+                      <p className="font-semibold text-ink">
+                        <span className="mr-2 rounded-md bg-ischool-blue-soft px-1.5 py-0.5 text-xs font-bold text-ischool-blue-dark tabular-nums">
+                          {code}
+                        </span>
+                        {c.title}
+                        {c.maxPoints != null && (
+                          <span className="ml-2 text-sm font-medium text-muted">
+                            {c.maxPoints} pts
+                          </span>
+                        )}
                         {isMissing && (
                           <span className="ml-2 text-xs font-semibold text-ahly-red-dark">
-                            Rating required
+                            Score required
                           </span>
                         )}
                       </p>
-                      {readOnly ? (
+                      {c.description && (
+                        <p className="whitespace-pre-wrap text-sm text-black/70">{c.description}</p>
+                      )}
+                      {c.guidelines && (
+                        <div className="rounded-xl bg-blue-50/70 px-3.5 py-2 text-sm">
+                          <p className="text-xs font-semibold tracking-wide text-blue-900 uppercase">
+                            Judging guidelines
+                          </p>
+                          <p className="mt-0.5 whitespace-pre-wrap text-blue-950/85">
+                            {c.guidelines}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="md:pt-1">
+                      {c.maxPoints != null ? (
+                        readOnly ? (
+                          <PointsValue value={r?.rating ?? null} max={c.maxPoints} />
+                        ) : (
+                          <PointsInput
+                            label={`Points for ${c.title}`}
+                            value={r?.rating ?? null}
+                            max={c.maxPoints}
+                            invalid={isMissing}
+                            onChange={(v) => setRating(c.id, { rating: v })}
+                          />
+                        )
+                      ) : readOnly ? (
                         <StarRating label={c.title} value={r?.rating ?? null} size={26} />
                       ) : (
                         <StarRating
@@ -463,31 +657,21 @@ export function ScoringForm({
                         />
                       )}
                     </div>
-                    {c.description && (
-                      <p className="whitespace-pre-wrap text-sm text-black/70">{c.description}</p>
-                    )}
-                    {c.guidelines && (
-                      <div className="rounded-xl bg-blue-50/70 px-3.5 py-2 text-sm">
-                        <p className="text-xs font-semibold tracking-wide text-blue-900 uppercase">
-                          Judging guidelines
-                        </p>
-                        <p className="mt-0.5 whitespace-pre-wrap text-blue-950/85">
-                          {c.guidelines}
-                        </p>
-                      </div>
-                    )}
-                    <NoteField
-                      label={`Note on ${c.title} (optional)`}
-                      value={r?.note ?? ''}
-                      onChange={(note) => setRating(c.id, { note })}
-                      maxLength={EVALUATION_LIMITS.criterionNote}
-                      readOnly={readOnly}
-                    />
+                    <div className="md:col-span-2">
+                      <NoteField
+                        label={`Note on ${c.title} (optional)`}
+                        value={r?.note ?? ''}
+                        onChange={(note) => setRating(c.id, { note })}
+                        maxLength={EVALUATION_LIMITS.criterionNote}
+                        readOnly={readOnly}
+                        collapsible
+                      />
+                    </div>
                   </li>
                 );
               })}
             </ol>
-            <div className="border-t border-black/5 px-5 py-4 sm:px-6">
+            <div className="border-t border-line bg-surface px-5 py-4 sm:px-6">
               <NoteField
                 label={`Note on ${s.title} (optional)`}
                 value={sectionNote.get(s.id) ?? ''}
@@ -495,6 +679,9 @@ export function ScoringForm({
                 maxLength={EVALUATION_LIMITS.sectionNote}
                 readOnly={readOnly}
               />
+              {readOnly && !sectionNote.get(s.id) && (
+                <p className="text-xs text-muted">No section note.</p>
+              )}
             </div>
           </Card>
         );
@@ -578,7 +765,9 @@ function EditableEvaluation({
   );
   const rated = input.ratings.filter((r) => r.rating != null).length;
   const total = input.ratings.length;
-  const partial = breakdown.sections.reduce((sum, s) => sum + (s.score ?? 0), 0);
+  const partial = isPointsRubric(rubric)
+    ? input.ratings.reduce((sum, r) => sum + (r.rating ?? 0), 0)
+    : breakdown.sections.reduce((sum, s) => sum + (s.score ?? 0), 0);
 
   function change(next: EvaluationInput) {
     auto.setInput(next);
@@ -688,7 +877,7 @@ function EditableEvaluation({
         </Alert>
       )}
       {missing && (
-        <Alert tone="error" title={`Rate all ${total} criteria before submitting`}>
+        <Alert tone="error" title={`Score all ${total} criteria before submitting`}>
           {missing.size} criteri{missing.size === 1 ? 'on is' : 'a are'} still missing. They are
           highlighted below.
         </Alert>
@@ -696,31 +885,37 @@ function EditableEvaluation({
 
       <ScoringForm rubric={rubric} input={input} onChange={change} missing={missing ?? undefined} />
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-black/10 bg-white/95 backdrop-blur">
+      <div className="judging-bar fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 shadow-[0_-8px_24px_-18px_#142d55] backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1">
             <SaveIndicator state={state} dirty={dirty} />
-            <span className="text-sm text-black/60">
-              {rated}/{total} rated
+            <span className="text-sm text-muted tabular-nums">
+              {rated}/{total} scored
             </span>
-            <span className="text-sm">
+            <span className="text-sm tabular-nums">
               {breakdown.total != null ? (
                 <>
-                  Final score{' '}
-                  <strong className="text-ischool-blue-dark">{formatScore(breakdown.total)}</strong>{' '}
+                  Total{' '}
+                  <strong className="text-lg text-ischool-blue-dark">
+                    {formatScore(breakdown.total)}
+                  </strong>{' '}
                   / {maximumScore(rubric.sections)}
                 </>
               ) : (
                 <>
-                  So far <strong>{formatScore(partial)}</strong> / {maximumScore(rubric.sections)}
+                  So far{' '}
+                  <strong className="text-lg">
+                    {isPointsRubric(rubric) ? partial : formatScore(partial)}
+                  </strong>{' '}
+                  / {maximumScore(rubric.sections)}
                 </>
               )}
             </span>
           </div>
-          <div className="flex gap-2">
+          <div className="flex w-full gap-2 sm:w-auto">
             <Button
               variant="secondary"
-              className="!py-2"
+              className="flex-1 !py-2 sm:flex-none"
               onClick={() => void auto.saveNow()}
               disabled={
                 state.kind === 'saving' ||
@@ -728,10 +923,14 @@ function EditableEvaluation({
                 (!dirty && state.kind === 'saved')
               }
             >
-              Save
+              Save draft
             </Button>
-            <Button className="!py-2" onClick={trySubmit} disabled={state.kind === 'conflict'}>
-              Submit…
+            <Button
+              className="flex-1 !py-2 sm:flex-none"
+              onClick={trySubmit}
+              disabled={state.kind === 'conflict'}
+            >
+              Submit evaluation…
             </Button>
           </div>
         </div>

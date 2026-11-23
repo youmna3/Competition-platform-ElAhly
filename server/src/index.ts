@@ -1,13 +1,18 @@
 import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { verifyProductionDatabase } from './production.js';
+import { databaseSsl } from './db/tls.js';
 import { APP_NAME } from '@judging/shared';
 import { ConfigError, loadConfig, loadToolConfig } from './config.js';
 import { checkDatabase, createPool } from './db/pool.js';
 import { createApp } from './app.js';
 import { MySqlSessionStore } from './auth/sessionStore.js';
 
-function start() {
+async function start() {
+  if (Number(process.versions.node.split('.')[0]) !== 24)
+    throw new Error('Node.js 24 LTS is required.');
   // `npm start` passes --production so no OS-specific env syntax is needed on Windows.
-  if (process.argv.includes('--production') && !process.env.NODE_ENV) {
+  if (process.argv.includes('--production')) {
     process.env.NODE_ENV = 'production';
   }
   let config;
@@ -16,7 +21,7 @@ function start() {
   } catch (error) {
     if (error instanceof ConfigError) {
       console.error(`[api] ${error.message}`);
-      console.error('[api] Fix server/.env (copy it from server/.env.example) and try again.');
+      console.error('[api] Check the server environment configuration.');
       process.exit(1);
     }
     throw error;
@@ -33,6 +38,17 @@ function start() {
   }
 
   const pool = createPool(config.db);
+  const clientDistDir = resolve(process.cwd(), '../client/dist');
+  if (config.isProduction) {
+    try {
+      if (!existsSync(resolve(clientDistDir, 'index.html')))
+        throw new Error('Production client build is missing.');
+      await verifyProductionDatabase(pool);
+    } catch (error) {
+      await pool.end();
+      throw error;
+    }
+  }
   const store = new MySqlSessionStore(pool, config.auth.maxSessionMs);
   const cleanup = setInterval(() => {
     store
@@ -41,21 +57,29 @@ function start() {
   }, 15 * 60_000);
   cleanup.unref();
 
-  const tools = loadToolConfig();
+  const tools = config.maintenance.enabled ? loadToolConfig() : undefined;
   const app = createApp({
-    maintenance: {
-      server: { host: config.db.host, port: config.db.port, ...tools.dbAdmin },
-      database: config.db.database,
-      backupDir: tools.backupDir,
-      binDir: tools.mysqlBinDir,
-      executionEnabled: process.env.COMPETITION_RESET_ENABLED === 'true',
-    },
+    web: config.web,
+    maintenance: tools
+      ? {
+          server: {
+            host: config.db.host,
+            port: config.db.port,
+            ...tools.dbAdmin,
+            ssl: databaseSsl(config.db),
+          },
+          database: config.db.database,
+          backupDir: tools.backupDir,
+          binDir: tools.mysqlBinDir,
+          executionEnabled: config.maintenance.resetExecutionEnabled,
+        }
+      : undefined,
     auth: { pool, config: config.auth, store },
     checkDatabase: () => checkDatabase(pool, config.db, { includeHint: !config.isProduction }),
     environment: config.env,
     version: process.env.npm_package_version ?? '0.1.0',
     logRequests: !config.isProduction,
-    clientDistDir: config.isProduction ? resolve(process.cwd(), '../client/dist') : undefined,
+    clientDistDir: config.isProduction ? clientDistDir : undefined,
   });
 
   const server = app.listen(config.port, config.host, () => {
@@ -63,10 +87,12 @@ function start() {
     console.log(`[api] ${APP_NAME} API (${config.env})`);
     console.log(`[api] listening on http://${shownHost}:${config.port}`);
     console.log(`[api] health check: http://${shownHost}:${config.port}/api/health`);
-    void checkDatabase(pool, config.db, { includeHint: true }).then((db) => {
+    void checkDatabase(pool, config.db, { includeHint: !config.isProduction }).then((db) => {
       if (db.status === 'ok') {
         console.log(
-          `[api] database ${db.database} connected (${db.serverVersion}, ${db.latencyMs} ms)`,
+          config.isProduction
+            ? '[api] database connection ready'
+            : `[api] database ${db.database} connected (${db.serverVersion}, ${db.latencyMs} ms)`,
         );
       } else {
         console.warn(`[api] database NOT connected: ${db.code} — ${db.hint ?? db.message}`);
@@ -99,4 +125,7 @@ function start() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-start();
+start().catch((error) => {
+  console.error('[api] Startup failed:', error instanceof Error ? error.message : 'Unknown error');
+  process.exit(1);
+});

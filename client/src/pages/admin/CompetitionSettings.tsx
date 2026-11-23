@@ -6,11 +6,14 @@ import {
   RESET_PHRASE,
   type CompetitionStatus,
   type ResetPreview,
+  type ResultsResponse,
 } from '@judging/shared';
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { Alert, Button, Card, PasswordField, TextField } from '../../components/ui';
 import { Modal } from '../../components/Modal';
+
+const RECOMMENDED_JUDGES = 3;
 
 export function CompetitionSettings() {
   const { user } = useAuth();
@@ -18,7 +21,9 @@ export function CompetitionSettings() {
   const query = useQuery({
     queryKey: ['admin', 'competition'],
     queryFn: () =>
-      api<CompetitionStatus & { resetExecutionEnabled: boolean }>('/api/admin/competition'),
+      api<CompetitionStatus & { resetExecutionEnabled: boolean; maintenanceAvailable?: boolean }>(
+        '/api/admin/competition',
+      ),
     refetchInterval: 15000,
   });
   const [busy, setBusy] = useState(false),
@@ -32,6 +37,21 @@ export function CompetitionSettings() {
     rowVersion: number;
   } | null>(null);
   const c = query.data;
+  // Recommended panel size. A warning only: teams with fewer judges can still be judged.
+  const results = useQuery({
+    queryKey: ['admin', 'results', 'judge-count-check'],
+    queryFn: () => api<ResultsResponse>('/api/admin/results'),
+    enabled: !!c && c.state !== 'closed',
+  });
+  const shortTeams = results.data?.official
+    ? [
+        ...results.data.official.teams,
+        ...results.data.provisional.flatMap((g) => g.teams),
+        ...results.data.notRanked,
+      ]
+        .filter((t) => t.assignedJudges < RECOMMENDED_JUDGES)
+        .sort((a, b) => a.teamCode.localeCompare(b.teamCode))
+    : [];
   async function run(work: () => Promise<void>) {
     setBusy(true);
     setError('');
@@ -88,11 +108,25 @@ export function CompetitionSettings() {
             <p className="font-semibold text-ischool-blue-dark">{COMPETITION_LABELS[c.state]}</p>
             <p className="text-sm text-muted">
               {c.state === 'preparation'
-                ? 'Publish a valid rubric, finish any draft and assign active judges to every active team before starting. Existing teams may have fewer than three judges.'
+                ? 'Publish a valid rubric, finish any draft and assign active judges to every active team before starting.'
                 : c.state === 'judging_open'
                   ? `Rubric v${c.lockedRubricVersionNo} is locked for judging. Close the competition when results are final.`
                   : 'Final leaderboard and reports remain available. All competition edits are disabled.'}
             </p>
+            {shortTeams.length > 0 && (
+              <Alert
+                tone="warning"
+                title={`${shortTeams.length} active team${shortTeams.length === 1 ? ' has' : 's have'} fewer than ${RECOMMENDED_JUDGES} judges`}
+              >
+                Each team should have {RECOMMENDED_JUDGES} judges. This is a recommendation only;
+                these teams can still be judged and ranked:{' '}
+                {shortTeams
+                  .slice(0, 12)
+                  .map((t) => `${t.teamCode} (${t.assignedJudges})`)
+                  .join(', ')}
+                {shortTeams.length > 12 ? ` and ${shortTeams.length - 12} more` : ''}.
+              </Alert>
+            )}
             {c.state !== 'closed' && (
               <Button
                 disabled={busy}
@@ -123,22 +157,30 @@ export function CompetitionSettings() {
           {!c?.resetExecutionEnabled && (
             <div className="mt-3">
               <Alert tone="warning">
-                Reset execution is disabled pending operator approval. You can create a backup and
-                deletion preview without deleting data.
+                {c?.maintenanceAvailable === false
+                  ? 'Reset execution is disabled on this server.'
+                  : 'Reset execution is disabled pending operator approval. You can create a backup and deletion preview without deleting data.'}
               </Alert>
             </div>
+          )}
+          {c?.maintenanceAvailable === false && (
+            <Alert tone="info">
+              Maintenance tools are disabled on this server. Contact the platform operator for
+              backup or recovery.
+            </Alert>
           )}
           {!preview ? (
             <div className="mt-4 space-y-3">
               <PasswordField
                 label="Current password for backup and preview"
+                disabled={busy || c?.maintenanceAvailable === false}
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
               <Button
                 variant="secondary"
-                disabled={busy || !password}
+                disabled={busy || !password || c?.maintenanceAvailable === false}
                 onClick={() => void prepare()}
               >
                 {busy ? 'Creating verified backup…' : 'Create backup and deletion preview'}

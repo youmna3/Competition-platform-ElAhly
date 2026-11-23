@@ -329,7 +329,7 @@ describe('Evaluation page', () => {
     await rate(1, 5);
     // Section 1: (4+5)/10 × 30 = 27.00, shown as the section score and the running total.
     expect(screen.getAllByText('27.00')).toHaveLength(2);
-    expect(screen.getByText('2/8 rated')).toBeInTheDocument();
+    expect(screen.getByText('2/8 scored')).toBeInTheDocument();
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
       timeout: 4000,
     });
@@ -382,14 +382,14 @@ describe('Evaluation page', () => {
     });
     renderAt('/judge/teams/1');
     await screen.findAllByRole('radiogroup');
-    await userEvent.click(screen.getByRole('button', { name: 'Submit…' }));
-    expect(screen.getByText('Rate all 8 criteria before submitting')).toBeInTheDocument();
-    expect(screen.getAllByText('Rating required')).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Submit evaluation…' }));
+    expect(screen.getByText('Score all 8 criteria before submitting')).toBeInTheDocument();
+    expect(screen.getAllByText('Score required')).toHaveLength(1);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     await rate(7, 4);
-    expect(screen.queryByText('Rating required')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Submit…' }));
+    expect(screen.queryByText('Score required')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Submit evaluation…' }));
     const dialog = await screen.findByRole('dialog', {
       name: 'Submit your evaluation of Falcons?',
     });
@@ -399,7 +399,7 @@ describe('Evaluation page', () => {
     await userEvent.click(confirm).catch(() => {}); // a double click must not submit twice
 
     expect(await screen.findByText('Submitted and locked')).toBeInTheDocument();
-    expect(screen.getByText('69.50')).toBeInTheDocument();
+    expect(screen.getAllByText('69.50').length).toBeGreaterThan(0);
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
     expect(calls.filter((c) => c.url.endsWith('/submit'))).toHaveLength(1);
     const put = calls.filter((c) => c.method === 'PUT').at(-1)!.body as { rowVersion: number };
@@ -422,7 +422,7 @@ describe('Evaluation page', () => {
     renderAt('/judge/teams/1');
     await screen.findAllByRole('radiogroup');
     await rate(0, 3);
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     expect(await screen.findByText('Your changes are not saved yet')).toBeInTheDocument();
     expect(
       within(screen.getAllByRole('radiogroup')[0]!).getByRole('radio', { name: '3 stars' }),
@@ -450,7 +450,7 @@ describe('Evaluation page', () => {
     renderAt('/judge/teams/1');
     await screen.findAllByRole('radiogroup');
     await rate(0, 1);
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     expect(
       await screen.findByText('This evaluation was changed in another tab or window'),
     ).toBeInTheDocument();
@@ -500,9 +500,9 @@ describe('Evaluation page', () => {
     mockApi(judgeUser, (c) => (c.method === 'GET' ? { status: 200, body: view(r, e) } : undefined));
     renderAt('/judge/teams/1');
     expect(await screen.findByText('Submitted and locked')).toBeInTheDocument();
-    expect(screen.getByText('100.00')).toBeInTheDocument();
+    expect(screen.getAllByText('100.00').length).toBeGreaterThan(0);
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Submit…' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit evaluation…' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('img', { name: /5 of 5 stars/ })).toHaveLength(8);
   });
 

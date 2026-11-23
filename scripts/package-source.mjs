@@ -19,6 +19,7 @@ const rootFiles = [
   'README.md',
 ];
 const trees = [
+  'deploy',
   'scripts',
   'client/src',
   'client/public',
@@ -108,7 +109,7 @@ export function checkContent(path, data, secrets = []) {
         throw new Error('Environment example must contain no credential values');
   }
 }
-async function localSecrets() {
+export async function localSecrets() {
   const secrets = [];
   for (const name of ['server/.env', 'server/.env.demo']) {
     let text;
@@ -143,7 +144,10 @@ export async function sourceFiles() {
     }
   }
   for (const tree of trees) await walk(tree);
-  for (const entry of await readdir(join(root, 'docs'), { withFileTypes: true }))
+  for (const entry of await readdir(join(root, 'docs'), { withFileTypes: true }).catch((error) => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }))
     if (entry.isFile() && entry.name.endsWith('.md')) files.add(`docs/${entry.name}`);
   for (const file of required)
     if (!files.has(file)) throw new Error(`Required file missing: ${file}`);
@@ -167,12 +171,12 @@ function crc32(data) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 // Deterministic ZIP: sorted paths, fixed DOS timestamp (1980-01-01), no host metadata.
-export function zip(files) {
+export function zip(files, prefix = 'judging-platform-local') {
   const chunks = [],
     central = [];
   let offset = 0;
   for (const { path, data } of files) {
-    const name = Buffer.from(`judging-platform-local/${path}`),
+    const name = Buffer.from(`${prefix}/${path}`),
       compressed = deflateRawSync(data, { level: 9 }),
       crc = crc32(data);
     const header = Buffer.alloc(30);

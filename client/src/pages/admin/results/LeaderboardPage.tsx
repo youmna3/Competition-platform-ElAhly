@@ -1,4 +1,5 @@
 import { TopTeams } from '../../../components/TopTeams';
+import { HeroStats, RankChip, ResultsHero } from '../../../components/Results';
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
@@ -12,7 +13,7 @@ import {
 } from '@judging/shared';
 import { api } from '../../../api/client';
 import { FullPageSpinner } from '../../../components/FullPageSpinner';
-import { Alert, Badge, Button, Card, SelectField } from '../../../components/ui';
+import { Alert, Badge, Card, SelectField } from '../../../components/ui';
 import { RESULT_STATUS_TONES, RESULTS_POLL_MS, formatTime } from './model';
 
 const SORTABLE: { field: ResultsSort; label: string }[] = [
@@ -115,13 +116,8 @@ function RankedTable({
                   !provisional && t.rank <= 3 ? 'bg-ischool-blue-soft/60' : ''
                 }`}
               >
-                <td className="px-4 py-3 text-lg font-bold tabular-nums">
-                  {t.rank}
-                  {isTied(t, teams) && (
-                    <span className="ml-2 align-middle">
-                      <Badge tone="blue">Tied</Badge>
-                    </span>
-                  )}
+                <td className="px-4 py-3">
+                  <RankChip rank={t.rank} tied={isTied(t, teams)} />
                 </td>
                 <td className="px-4 py-3 font-mono text-xs">{t.teamCode}</td>
                 <td className="px-4 py-3 font-semibold">
@@ -137,11 +133,14 @@ function RankedTable({
                   {t.submitted}/{t.assignedJudges}
                 </td>
                 <td className="px-4 py-3 text-right text-lg font-bold tabular-nums">
-                  {formatScore(t.score)} / {t.maximumScore ?? 100}
-                  <span className="block text-xs font-normal text-muted">
-                    Base {formatScore(t.baseAverage ?? t.score)} · Bonus +{' '}
-                    {formatScore(t.bonusAverage ?? 0)}
-                  </span>
+                  <span className="text-ischool-blue-dark">{formatScore(t.score)}</span>{' '}
+                  <span className="text-sm font-medium text-muted">/ {t.maximumScore ?? 100}</span>
+                  {(t.bonusAverage ?? 0) > 0 && (
+                    <span className="block text-xs font-normal text-muted">
+                      Base {formatScore(t.baseAverage ?? t.score)} · Bonus +{' '}
+                      {formatScore(t.bonusAverage ?? 0)}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-col items-start gap-1">
@@ -161,25 +160,30 @@ function RankedTable({
               className={`!p-4 ${!provisional && t.rank <= 3 ? 'ring-2 ring-ischool-blue/30' : ''}`}
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs text-muted">
-                    Rank <span className="text-base font-bold text-black">{t.rank}</span>
-                    {isTied(t, teams) ? ' · tied' : ''} · {t.teamCode}
-                  </p>
-                  <p className="font-semibold">{t.name}</p>
-                  <p className="text-sm text-black/60">{t.projectName}</p>
+                <div className="flex min-w-0 gap-3">
+                  <RankChip rank={t.rank} />
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted">
+                      {isTied(t, teams) ? 'Tied · ' : ''}
+                      {t.teamCode}
+                    </p>
+                    <p className="font-semibold">{t.name}</p>
+                    <p className="text-sm text-black/60">{t.projectName}</p>
+                  </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold tabular-nums">
+                  <p className="text-2xl font-bold text-ischool-blue-dark tabular-nums">
                     {formatScore(t.score)}{' '}
                     <span className="text-sm font-medium text-muted">
                       / {t.maximumScore ?? 100}
                     </span>
                   </p>
-                  <p className="text-xs text-muted">
-                    Base {formatScore(t.baseAverage ?? t.score)} · Bonus +
-                    {formatScore(t.bonusAverage ?? 0)}
-                  </p>
+                  {(t.bonusAverage ?? 0) > 0 && (
+                    <p className="text-xs text-muted">
+                      Base {formatScore(t.baseAverage ?? t.score)} · Bonus +
+                      {formatScore(t.bonusAverage ?? 0)}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-black/60">
@@ -286,33 +290,28 @@ export function LeaderboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="eyebrow">Detailed results · administrators only · not public</p>
-          <h1 className="text-2xl font-bold sm:text-3xl">Leaderboard</h1>
-          <p className="mt-1 max-w-2xl text-sm text-black/60">
-            A team’s final score is the average of the submitted scores of every judge currently
-            assigned to it. Teams are ranked only when all of their judges have submitted. Equal
-            scores share a rank.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {data && (
-            <span className="text-xs text-muted" aria-live="polite">
-              Updated {formatTime(data.computedAt)}
-            </span>
-          )}
-          <Button
-            variant="secondary"
-            onClick={() => void results.refetch()}
-            disabled={results.isFetching}
-          >
-            {results.isFetching ? 'Refreshing…' : 'Refresh'}
-          </Button>
-        </div>
-      </div>
+      <ResultsHero
+        eyebrow="Detailed results · administrators only · not public"
+        title="Leaderboard"
+        description="A team’s final score is the average of the submitted scores of every judge currently assigned to it. Teams are ranked only when all of their judges have submitted. Equal scores share a rank."
+        updatedAt={data ? formatTime(data.computedAt) : null}
+        refreshing={results.isFetching}
+        onRefresh={() => void results.refetch()}
+      >
+        {data && data.totals.activeTeams > 0 && (
+          <HeroStats
+            items={[
+              ['Ready for results', data.totals.ready],
+              ['In progress', data.totals.inProgress],
+              ['Not started', data.totals.notStarted],
+              ['Blocked', data.totals.blocked],
+              ['Unassigned', data.totals.unassigned],
+            ]}
+          />
+        )}
+      </ResultsHero>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <Card className="flex flex-wrap items-end gap-3 !p-4">
         <div className="w-full max-w-md flex-1 space-y-1.5">
           <label htmlFor="results-search" className="block text-sm font-medium">
             Search
@@ -346,7 +345,7 @@ export function LeaderboardPage() {
             ])}
           </SelectField>
         </div>
-      </div>
+      </Card>
 
       {results.isPending ? (
         <FullPageSpinner label="Calculating results…" />
@@ -370,23 +369,6 @@ export function LeaderboardPage() {
         </Card>
       ) : (
         <>
-          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-            {(
-              [
-                ['Ready for results', data!.totals.ready],
-                ['In progress', data!.totals.inProgress],
-                ['Not started', data!.totals.notStarted],
-                ['Blocked', data!.totals.blocked],
-                ['Unassigned', data!.totals.unassigned],
-              ] as const
-            ).map(([label, value]) => (
-              <Card key={label} className="!p-3">
-                <dt className="text-xs text-muted">{label}</dt>
-                <dd className="text-xl font-bold tabular-nums">{value}</dd>
-              </Card>
-            ))}
-          </dl>
-
           {data!.versionWarnings.map((w) => (
             <Alert key={w} tone="warning" title="Rubric versions">
               {w}

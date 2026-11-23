@@ -287,7 +287,7 @@ export function TeamDetailsPage() {
                     )}
                     {a.rubricVersionNo != null && a.weights && (
                       <p className="text-xs text-muted">
-                        v{a.rubricVersionNo} · weights {a.weights.join('/')}%
+                        v{a.rubricVersionNo} · section points {a.weights.join('/')}
                       </p>
                     )}
                     {a.evaluationId != null && (

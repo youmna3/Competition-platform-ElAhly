@@ -3,12 +3,14 @@
  * does not exist yet. It creates no tables; the schema arrives in Phase 1.
  */
 import mysql from 'mysql2/promise';
-import { ConfigError, loadConfig } from '../src/config.js';
+import { ConfigError, loadToolConfig } from '../src/config.js';
 import { describeDatabaseError } from '../src/db/pool.js';
+import { databaseSsl } from '../src/db/tls.js';
 
 async function main() {
-  const config = loadConfig();
-  const { host, port, user, password, database } = config.db;
+  const config = loadToolConfig();
+  const { host, port, database } = config.db;
+  const { user, password } = config.dbAdmin;
   console.log(`Connecting to MySQL at ${host}:${port} as "${user}"…`);
 
   let connection;
@@ -19,6 +21,7 @@ async function main() {
       port,
       user,
       password,
+      ssl: databaseSsl(config.db),
       connectTimeout: 5_000,
     });
   } catch (error) {

@@ -72,6 +72,7 @@ export function AppLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const restricted = user?.mustChangePassword ?? true;
 
   async function signOut() {
@@ -96,16 +97,27 @@ export function AppLayout() {
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-2 sm:px-6">
           <BrandMark />
           {user && (
-            <div className="flex items-center gap-3">
-              <div className="hidden text-right leading-tight sm:block">
+            <div className="flex min-w-0 max-w-full items-center gap-3">
+              <div className="hidden min-w-0 text-right leading-tight sm:block">
                 <p className="max-w-[220px] truncate text-sm font-semibold">{user.fullName}</p>
                 <p className="text-xs text-muted">{ROLE_LABELS[user.role]}</p>
               </div>
+              {!restricted && (
+                <button
+                  type="button"
+                  aria-expanded={menuOpen}
+                  aria-controls="main-navigation"
+                  onClick={() => setMenuOpen((open) => !open)}
+                  className="secondary-link shrink-0 whitespace-nowrap md:hidden"
+                >
+                  {menuOpen ? 'Close' : 'Menu'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={signOut}
                 disabled={signingOut}
-                className="secondary-link disabled:opacity-60"
+                className="secondary-link shrink-0 whitespace-nowrap disabled:opacity-60"
               >
                 {signingOut ? 'Signing out…' : 'Sign out'}
               </button>
@@ -114,8 +126,14 @@ export function AppLayout() {
         </div>
         {user && !restricted && (
           <nav
+            id="main-navigation"
             aria-label="Main"
-            className="mx-auto flex w-full max-w-6xl gap-1 overflow-x-auto px-4 pb-2 sm:px-6"
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest('a')) setMenuOpen(false);
+            }}
+            className={`mx-auto w-full max-w-6xl flex-col gap-1 px-4 pb-3 sm:px-6 md:flex md:flex-row md:flex-wrap md:pb-2 ${
+              menuOpen ? 'flex' : 'hidden'
+            }`}
           >
             {user.role === 'admin' && (
               <>

@@ -213,15 +213,15 @@ describe('publishing', () => {
   it('refuses criteria that are not required 1-5 star ratings weighted by their section', async () => {
     const { version, criteria } = await validDraft(1);
     await c().query('UPDATE rubric_criteria SET max_score = 10 WHERE id = ?', [criteria[0]]);
-    await expectRefused(publish(c(), version), /invalid star scale/);
+    await expectRefused(publish(c(), version), /invalid (star scale|score range)/);
     await c().query('UPDATE rubric_criteria SET max_score = 5, weight = 3 WHERE id = ?', [
       criteria[0],
     ]);
-    await expectRefused(publish(c(), version), /invalid star scale/);
+    await expectRefused(publish(c(), version), /invalid (star scale|score range)/);
     await c().query('UPDATE rubric_criteria SET weight = 2.5, is_required = FALSE WHERE id = ?', [
       criteria[0],
     ]);
-    await expectRefused(publish(c(), version), /invalid star scale/);
+    await expectRefused(publish(c(), version), /invalid (star scale|score range)/);
   });
 
   it('refuses bonus sections', async () => {

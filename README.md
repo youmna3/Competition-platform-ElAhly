@@ -2,7 +2,9 @@
 
 A local judging application using React, Express and MySQL/MariaDB. Phases 0-8,
 UI improvements, authenticated judge leaderboards and administrator submission
-corrections, versioned Actual/Bonus rubrics and Phase 9 administrator reports are implemented. Phase 10 has not been started.
+corrections, versioned Actual/Bonus rubrics and administrator reports are implemented.
+Production packages, security settings and controlled deployment steps are documented
+in [deploy/README.md](deploy/README.md). No public deployment is performed automatically.
 
 ## Repository and workspaces
 
@@ -91,6 +93,17 @@ npm run db:check
 
 Never use `db:reset`, `db:restore` or demo reseeding as an upgrade step.
 
+To check which rubric versions your evaluations use, run the read-only report:
+
+```powershell
+npm run db:rubric-check
+```
+
+It lists every rubric version, the competition's locked version, evaluations per version,
+active teams whose assigned judges used more than one version, and assigned evaluations that
+are not on the locked (or published) version. It never changes data. Exit code 0 means
+consistent; 2 means it found something to review.
+
 ## Running and using the application
 
 ```powershell
@@ -168,6 +181,38 @@ question count. New variable-count calculations do not round intermediate sectio
 Rank comparisons use integer units on a common denominator supporting all counts
 1-10, then compare team averages exactly. Display alone uses two decimals.
 New drafts and restored copies use format 3; older published versions stay immutable.
+
+### Official 2026 numeric-points rubric (Stage 3)
+
+Migration 014 adds **scoring format 4: numeric points**. Each criterion is scored
+with a whole number from **0 to its own maximum** (0 is a valid score; blank means
+not scored yet). A section's score is the sum of its criteria and the final score
+is the sum of the sections. Points rubrics have no Bonus sections, and all criteria
+must total exactly 100 before publishing (also enforced by the database). Older star
+rubric versions and their evaluations, snapshots and history are unchanged and keep
+scoring with stars.
+
+In **Rubric Management** choose **Load Official 2026 Rubric**. It fills a **draft**
+with the 4 sections and 12 criteria of the official judging criteria document
+(A 30, B 25, C 25, D 20 points), copied verbatim. If a draft already exists you are
+asked before its content is replaced. Nothing is published automatically: review the
+draft, use **Preview**, then **Publish…** yourself while the competition is in
+Preparation. The scoring method can also be switched per draft in the editor
+(Numeric points or Stars); points drafts stay points drafts when restored.
+
+Judges see large point inputs with − / + steppers (arrow keys, Home/End also work),
+the maximum beside each criterion, live section subtotals, the running total out
+of 100 and a confirmation before submitting. Administrator corrections, team
+averages, the leaderboards and the Excel/CSV reports use the same server-side
+calculation (the Criteria sheet now includes each criterion's maximum).
+
+Before upgrading an existing installation:
+
+```powershell
+npm run db:backup
+npm run db:migrate
+npm run db:rubric-check
+```
 
 ### Administrator reports (Phase 9)
 
@@ -329,21 +374,23 @@ Preserve workspace-relative paths and include:
 Do not remove `shared/dist/`: the shared package exports resolve there. Do not deploy
 just the browser build; it needs the Express API. TypeScript source, tests and screenshots
 are unnecessary for a runtime-only package, but retain all migration SQL with the release.
-Operational scripts run through `tsx` and source imports, so keep a separate maintenance
-copy with development dependencies for migrations, backup and recovery. A runtime-only
-`npm ci --omit=dev` installation does not provide those tools.
+Production packages include compiled maintenance tools. Use the documented
+`production:migrate`, `production:backup` and recovery commands without installing
+development tools. The original `db:*` commands remain development/source commands.
 
-Defaults bind to loopback and plain local HTTP. This cleanup does not enable public
-hosting, network exposure or Phase 10 features. Keep the existing restricted runtime
-DB account and filesystem protection for environment/backup files.
+Development defaults bind to loopback and plain local HTTP. Production requires
+validated HTTPS/proxy settings and a restricted database account. Follow the production
+runbook before release; local credentials and backups are excluded from deployment ZIPs.
 
 ## Competition lifecycle and guarded reset
 
 Open **Settings → Competition lifecycle** as an administrator. New installations and
 migration 013 begin in **Preparation**; existing competition records are retained.
 Publish a valid rubric, finish/discard any draft, add active teams and assign at least
-one active judge to every active team. Three judges per team are supported; smaller
-existing panels are also supported. Resolve assigned evaluations using other rubric
+one active judge to every active team. Three judges per team are recommended; Settings
+lists active teams with fewer than three as a warning, but smaller panels can still be judged
+and ranked. Administrator corrections and reopening are available only while the
+competition is **Judging Open**; in other states the Evaluations screens say so and link here. Resolve assigned evaluations using other rubric
 versions before starting. Starting requires confirmation and locks the currently
 published rubric. Every new evaluation uses that version. During **Judging Open**,
 judges can save/submit, and administrators can correct each submitted evaluation with

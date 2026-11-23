@@ -250,7 +250,7 @@ async function evaluationSheets(conn: PoolConnection, filters: ReportFilters) {
     'Section ID',
     'Section',
     'Type',
-    'Actual weight percent',
+    'Section points or Actual weight percent',
     'Maximum bonus',
     'Section score',
     'Section notes',
@@ -260,7 +260,8 @@ async function evaluationSheets(conn: PoolConnection, filters: ReportFilters) {
     'Section ID',
     'Criterion ID',
     'Criterion',
-    'Stars (blank = unrated)',
+    'Score (stars 1-5 or points; blank = unscored)',
+    'Maximum (5 stars or criterion points)',
     'Criterion notes',
   ]);
   const rubricCache = new Map<number, NonNullable<Awaited<ReturnType<typeof loadVersion>>>>();
@@ -306,7 +307,15 @@ async function evaluationSheets(conn: PoolConnection, filters: ReportFilters) {
       ]);
       for (const c of s.criteria) {
         const r = ratings.get(c.id);
-        criteria.rows.push([e.id, s.id, c.id, c.title, r?.rating ?? null, r?.note ?? '']);
+        criteria.rows.push([
+          e.id,
+          s.id,
+          c.id,
+          c.title,
+          r?.rating ?? null,
+          c.maxPoints ?? 5,
+          r?.note ?? '',
+        ]);
       }
     });
   }
@@ -445,12 +454,13 @@ async function rubricSheets(conn: PoolConnection, filters: ReportFilters) {
     'Section ID',
     'Section',
     'Type',
-    'Actual weight percent',
+    'Section points or Actual weight percent',
     'Maximum bonus points',
     'Section description',
     'Criterion ID',
     'Criterion',
     'Criterion description',
+    'Criterion maximum points (points rubrics)',
     'Guidelines',
     'Instructions',
   ]);
@@ -474,6 +484,7 @@ async function rubricSheets(conn: PoolConnection, filters: ReportFilters) {
           c.id,
           c.title,
           c.description,
+          c.maxPoints ?? null,
           c.guidelines,
           v.instructions,
         ]);

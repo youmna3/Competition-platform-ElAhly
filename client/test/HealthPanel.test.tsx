@@ -53,7 +53,7 @@ describe('HealthPanel', () => {
     mockFetch(200, body);
     renderPanel();
 
-    const db = await screen.findByRole('region', { name: 'XAMPP MySQL database' });
+    const db = await screen.findByRole('region', { name: 'Data service' });
     expect(await within(db).findByText('Response time')).toBeInTheDocument();
     expect(screen.queryByText('judging_platform')).not.toBeInTheDocument();
     expect(screen.queryByText('10.4.32-MariaDB')).not.toBeInTheDocument();
@@ -78,7 +78,7 @@ describe('HealthPanel', () => {
     mockFetch(503, body);
     renderPanel();
 
-    const db = await screen.findByRole('region', { name: 'XAMPP MySQL database' });
+    const db = await screen.findByRole('region', { name: 'Data service' });
     expect(await within(db).findByText(/Database unavailable/)).toBeInTheDocument();
     expect(screen.queryByText(/127.0.0.1:3306/)).not.toBeInTheDocument();
     expect(within(db).getByText('Not connected')).toBeInTheDocument();

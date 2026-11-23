@@ -3,10 +3,13 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router';
 import {
+  COMPETITION_LABELS,
   EVALUATION_PROGRESS_LABELS,
   REOPEN_REASON,
   formatScore,
+  isPointsRubric,
   maximumScore,
+  sectionMaximum,
   type AdminEvaluationDetail,
   type EvaluationEvent,
   type EvaluationHistoryResponse,
@@ -67,7 +70,7 @@ function HistoryItem({ e }: { e: EvaluationEvent }) {
           <>
             <p>Reason: {e.reason}</p>
             <p>
-              Score {formatScore(e.previousScore ?? 0)} ? {formatScore(e.totalScore ?? 0)}
+              Score {formatScore(e.previousScore ?? 0)} → {formatScore(e.totalScore ?? 0)}
             </p>
             {e.previousSnapshot && e.snapshot && (
               <details>
@@ -119,7 +122,7 @@ function HistoryItem({ e }: { e: EvaluationEvent }) {
                             .snapshot!.ratings.filter((r) => r.sectionId === s.sectionId)
                             .map(
                               (r) =>
-                                `${r.title}: ${r.rating == null ? 'Not rated' : `${r.rating}★`}`,
+                                `${r.title}: ${r.rating == null ? 'Not scored' : r.maxPoints != null ? `${r.rating} / ${r.maxPoints} pts` : `${r.rating}★`}`,
                             )
                             .join(' · ')}
                         </td>
@@ -348,25 +351,35 @@ export function EvaluationReviewPage() {
           </h1>
         </div>
         {e.status === 'submitted' && (
-          <Button
-            disabled={d.canCorrect === false || lifecycleBlocked}
-            onClick={() => setEditing(true)}
-          >
-            Edit Submission
-          </Button>
-        )}
-        {e.status === 'submitted' && (
-          <Button
-            variant="secondary"
-            className="!text-ahly-red-dark"
-            onClick={() => setReopening(true)}
-            disabled={!d.canReopen || lifecycleBlocked}
-          >
-            Reopen…
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              disabled={d.canCorrect === false || lifecycleBlocked}
+              onClick={() => setEditing(true)}
+            >
+              Edit Submission
+            </Button>
+            <Button
+              variant="secondary"
+              className="!text-ahly-red-dark"
+              onClick={() => setReopening(true)}
+              disabled={!d.canReopen || lifecycleBlocked}
+            >
+              Reopen…
+            </Button>
+          </div>
         )}
       </div>
-      {e.status === 'submitted' && !d.canReopen && d.reopenBlockedReason && (
+      {e.status === 'submitted' && lifecycleBlocked && (
+        <Alert tone="info" title="Judging is not open">
+          Submissions can only be corrected or reopened while the competition is{' '}
+          <strong>Judging Open</strong>. The competition is currently{' '}
+          <strong>{COMPETITION_LABELS[lifecycle.data!.state]}</strong>.{' '}
+          <Link to="/admin/settings" className="font-semibold text-ischool-blue-dark underline">
+            Go to Settings
+          </Link>
+        </Alert>
+      )}
+      {e.status === 'submitted' && !lifecycleBlocked && !d.canReopen && d.reopenBlockedReason && (
         <Alert tone="info">{d.reopenBlockedReason}</Alert>
       )}
       {d.reopen && e.status === 'draft' && (
@@ -413,7 +426,7 @@ export function EvaluationReviewPage() {
           <p className="mt-1 text-xs text-muted">
             {e.submittedAt
               ? `Submitted ${formatDateTime(e.submittedAt)}`
-              : `${e.ratedCount}/{e.requiredCount} rated`}
+              : `${e.ratedCount}/${e.requiredCount} rated`}
           </p>
         </div>
       </Card>
@@ -427,10 +440,18 @@ export function EvaluationReviewPage() {
             {d.rubric.sections.map((s, i) => (
               <li key={s.id}>
                 {s.title}{' '}
-                {s.type === 'bonus' ? `Bonus +${s.maxBonusPoints} max` : `${s.weightPercent}%`} →{' '}
                 <strong className="tabular-nums">
                   {d.sectionScores[i] != null ? formatScore(d.sectionScores[i]!) : '—'}
                 </strong>
+                <span className="text-muted">
+                  {' '}
+                  /{' '}
+                  {isPointsRubric(d.rubric)
+                    ? sectionMaximum(s)
+                    : s.type === 'bonus'
+                      ? `bonus +${s.maxBonusPoints} max`
+                      : `${s.weightPercent}%`}
+                </span>
               </li>
             ))}
           </ul>

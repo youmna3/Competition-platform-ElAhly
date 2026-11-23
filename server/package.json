@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.ts",
     "db:check": "tsx scripts/db-check.ts",
+    "db:rubric-check": "tsx scripts/db-rubric-check.ts",
     "db:create": "tsx scripts/db-create.ts",
     "db:setup": "tsx scripts/db-setup.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
@@ -23,7 +24,15 @@
     "db:demo": "tsx scripts/db-demo.ts",
     "demo:dev": "tsx scripts/demo-dev.ts",
     "auth:secret": "tsx scripts/auth-secret.ts",
-    "auth:reset-password": "tsx scripts/auth-reset-password.ts"
+    "auth:reset-password": "tsx scripts/auth-reset-password.ts",
+    "production:migrate": "node dist/scripts/db-migrate.js",
+    "production:backup": "node dist/scripts/db-backup.js",
+    "production:restore": "node dist/scripts/db-restore.js",
+    "production:restore-check": "node dist/scripts/db-restore-check.js",
+    "production:check": "node dist/scripts/db-check.js",
+    "production:create": "node dist/scripts/db-create.js",
+    "production:seed": "node dist/scripts/db-seed.js",
+    "production:app-user": "node dist/scripts/db-app-user.js"
   },
   "dependencies": {
     "@judging/shared": "0.1.0",

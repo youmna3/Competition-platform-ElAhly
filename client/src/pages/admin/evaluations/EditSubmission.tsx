@@ -50,9 +50,17 @@ export function SubmissionComparison({
       return [
         [
           `criterion-${r.criterionId}-rating`,
-          `${r.title} stars`,
-          old?.rating == null ? 'Not rated' : String(old.rating),
-          r.rating == null ? 'Not rated' : String(r.rating),
+          `${r.title} ${r.maxPoints != null ? 'points' : 'stars'}`,
+          old?.rating == null
+            ? 'Not scored'
+            : r.maxPoints != null
+              ? `${old.rating} / ${r.maxPoints}`
+              : String(old.rating),
+          r.rating == null
+            ? 'Not scored'
+            : r.maxPoints != null
+              ? `${r.rating} / ${r.maxPoints}`
+              : String(r.rating),
         ],
         [`criterion-${r.criterionId}-notes`, `${r.title} notes`, old?.note ?? '', r.note],
       ];
@@ -133,6 +141,7 @@ export function EditSubmission({
           sectionId: s.id,
           title: c.title,
           rating: value.ratings.find((r) => r.criterionId === c.id)?.rating ?? null,
+          ...(c.maxPoints != null ? { maxPoints: c.maxPoints } : {}),
           note: value.ratings.find((r) => r.criterionId === c.id)?.note ?? '',
         })),
       ),
@@ -263,8 +272,8 @@ export function EditSubmission({
       </p>
       {!complete && (
         <Alert tone="warning">
-          Complete all Actual ratings and all questions in any Bonus section you start, or choose
-          Skip bonus.
+          Score every criterion (0 is a valid score). For star rubrics, also complete or skip any
+          Bonus section you start.
         </Alert>
       )}
       {confirm ? (

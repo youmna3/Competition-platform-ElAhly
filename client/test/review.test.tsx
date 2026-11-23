@@ -173,6 +173,8 @@ const events: EvaluationEvent[] = [
   },
 ];
 
+let competitionState = 'judging_open';
+
 interface Call {
   url: string;
   method: string;
@@ -198,7 +200,7 @@ function mockApi(
         : call.url === '/api/competition'
           ? {
               status: 200,
-              body: { state: 'judging_open', rowVersion: 1, lockedRubricVersionNo: 1 },
+              body: { state: competitionState, rowVersion: 1, lockedRubricVersionNo: 1 },
             }
           : handler(call)) ?? {
         status: 404,
@@ -278,7 +280,10 @@ function renderAt(path: string) {
   );
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  competitionState = 'judging_open';
+});
 
 const listResponse: AdminEvaluationsResponse = {
   total: 1,
@@ -345,6 +350,7 @@ const listResponse: AdminEvaluationsResponse = {
           evaluationId: 9,
           status: 'draft',
           ratedCount: 3,
+          requiredCount: 8,
           totalScore: null,
           rubricVersionNo: 2,
           submittedAt: null,
@@ -367,7 +373,7 @@ describe('Evaluations list', () => {
       (await screen.findAllByRole('link', { name: 'Review Judge One’s evaluation' }))[0],
     ).toHaveAttribute('href', '/admin/evaluations/7');
     expect(screen.getAllByText('100.00').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('3/8').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('3/8 rated').length).toBeGreaterThan(0);
     expect(screen.getAllByText('80.00').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Mixed rubric versions').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Reopened ×1').length).toBeGreaterThan(0);
@@ -415,6 +421,26 @@ describe('Evaluation review', () => {
     expect(await screen.findByText('Evaluation started')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Show what was submitted' }));
     expect(screen.getByText('Idea A: 3★')).toBeInTheDocument();
+  });
+
+  it('explains that corrections need Judging Open, with a link to Settings', async () => {
+    competitionState = 'preparation';
+    mockApi(adminUser, (c) =>
+      c.url === '/api/admin/evaluations/7'
+        ? { status: 200, body: { ...detail(), canCorrect: false } }
+        : c.url === '/api/admin/evaluations/7/history'
+          ? { status: 200, body: { events } }
+          : undefined,
+    );
+    renderAt('/admin/evaluations/7');
+    const notice = await screen.findByText('Judging is not open');
+    expect(notice.closest('[role="status"]')).toHaveTextContent(/currently\s*Preparation/);
+    expect(screen.getByRole('link', { name: 'Go to Settings' })).toHaveAttribute(
+      'href',
+      '/admin/settings',
+    );
+    expect(screen.getByRole('button', { name: 'Edit Submission' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reopen…' })).toBeDisabled();
   });
 
   it('reopens only with a reason of at least five characters, after confirmation', async () => {

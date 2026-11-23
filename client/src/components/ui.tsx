@@ -120,9 +120,14 @@ export function PasswordField({
   );
 }
 
-export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function Card({
+  children,
+  className = '',
+  ...rest
+}: React.HTMLAttributes<HTMLDivElement> & { children: ReactNode; className?: string }) {
   return (
     <div
+      {...rest}
       className={`ui-card min-w-0 rounded-2xl border border-line/80 bg-white p-5 shadow-card sm:p-6 ${className}`}
     >
       {children}
@@ -173,5 +178,77 @@ export function Badge({
     >
       {children}
     </span>
+  );
+}
+
+/** Page title block: eyebrow, title, description and actions on the right. */
+export function PageHeader({
+  eyebrow,
+  title,
+  description,
+  actions,
+}: {
+  eyebrow?: ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="page-header flex flex-wrap items-end justify-between gap-4">
+      <div className="min-w-0 max-w-3xl">
+        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-ink sm:text-3xl">{title}</h1>
+        {description && <p className="mt-2 text-sm text-muted sm:text-base">{description}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+/** A headline number with a label and an optional note. */
+export function StatCard({
+  label,
+  value,
+  note,
+  accent = 'blue',
+}: {
+  label: string;
+  value: ReactNode;
+  note?: ReactNode;
+  accent?: 'blue' | 'green' | 'gold' | 'red' | 'gray';
+}) {
+  const bar = {
+    blue: 'bg-ischool-blue',
+    green: 'bg-emerald-600',
+    gold: 'bg-ahly-gold',
+    red: 'bg-ahly-red',
+    gray: 'bg-black/20',
+  }[accent];
+  return (
+    <div className="stat-card relative min-w-0 overflow-hidden rounded-2xl border border-line/80 bg-white p-5 shadow-card">
+      <span className={`absolute inset-y-0 left-0 w-1 ${bar}`} aria-hidden />
+      <p className="text-sm font-medium text-muted">{label}</p>
+      <p className="mt-2 text-3xl font-bold text-ink tabular-nums">{value}</p>
+      {note && <p className="mt-1 text-xs text-muted">{note}</p>}
+    </div>
+  );
+}
+
+/** An empty state with a title, a short explanation and an optional action. */
+export function EmptyState({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-dashed border-line bg-white px-6 py-12 text-center">
+      <p className="text-lg font-semibold text-ink">{title}</p>
+      {children && <div className="mx-auto mt-1 max-w-md text-sm text-muted">{children}</div>}
+      {action && <div className="mt-5 flex justify-center">{action}</div>}
+    </div>
   );
 }

@@ -2,6 +2,7 @@ import { createInterface } from 'node:readline/promises';
 import mysql from 'mysql2/promise';
 import { ConfigError, type ToolConfig } from '../../src/config.js';
 import { describeDatabaseError } from '../../src/db/pool.js';
+import { databaseSsl } from '../../src/db/tls.js';
 
 /** Runs a script's main function with friendly error output and exit codes. */
 export function runScript(main: () => Promise<number | void>) {
@@ -38,6 +39,7 @@ export function adminServer(config: ToolConfig) {
     port: config.db.port,
     user: config.dbAdmin.user,
     password: config.dbAdmin.password,
+    ssl: databaseSsl(config.db),
   };
 }
 

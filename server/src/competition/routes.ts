@@ -13,6 +13,7 @@ export function competitionRouter(pool: Pool, maintenance?: CompetitionReset) {
     res.json({
       ...(await competitionStatus(pool)),
       resetExecutionEnabled: maintenance?.executionEnabled ?? false,
+      maintenanceAvailable: !!maintenance,
     }),
   );
   router.post('/transition', async (req, res) => {

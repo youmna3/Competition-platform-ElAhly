@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
@@ -10,6 +11,39 @@ const booleanFlag = z
   .transform((value) => value === 'true');
 
 const port = (fallback: number) => z.coerce.number().int().min(1).max(65535).default(fallback);
+const origin = z.string().refine((value) => {
+  try {
+    return new URL(value).origin === value && !new URL(value).username;
+  } catch {
+    return false;
+  }
+}, 'must be an exact origin without a path, credentials or trailing slash');
+const proxyList = z
+  .string()
+  .default('')
+  .transform((s) =>
+    s
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean),
+  )
+  .refine(
+    (values) =>
+      values.every((v) => {
+        if (v === 'loopback') return true;
+        const [address, prefix, ...extra] = v.split('/');
+        const family = isIP(address!);
+        return (
+          !!family &&
+          !extra.length &&
+          (prefix === undefined ||
+            (/^\d+$/.test(prefix) &&
+              Number(prefix) > 0 &&
+              Number(prefix) <= (family === 4 ? 32 : 128)))
+        );
+      }),
+    'must contain explicit proxy IPs/CIDRs or loopback; blanket trust is forbidden',
+  );
 
 const envSchema = z
   .object({
@@ -17,11 +51,30 @@ const envSchema = z
     HOST: z.string().trim().min(1).default('127.0.0.1'),
     PORT: port(4000),
     ALLOW_NETWORK_ACCESS: booleanFlag,
+    PUBLIC_ORIGIN: origin.optional(),
+    TRUST_PROXY: proxyList,
+    CORS_ORIGINS: z
+      .string()
+      .default('')
+      .transform((s) =>
+        s
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean),
+      )
+      .refine(
+        (values) => values.every((v) => origin.safeParse(v).success),
+        'must contain exact origins, never wildcards',
+      ),
+    MAINTENANCE_API_ENABLED: z.enum(['true', 'false']).optional(),
+    COMPETITION_RESET_ENABLED: booleanFlag,
     DB_HOST: z.string().trim().min(1).default('127.0.0.1'),
     DB_PORT: port(3306),
     DB_USER: z.string().trim().min(1, 'DB_USER is required'),
     // XAMPP's root account has an empty password by default, so empty is allowed.
     DB_PASSWORD: z.string().default(''),
+    DB_TLS: booleanFlag,
+    DB_TLS_CA_FILE: z.string().trim().optional(),
     DB_NAME: z
       .string()
       .trim()
@@ -55,6 +108,35 @@ const envSchema = z
       .default(15),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === 'production') {
+      const reject = (path: string, message: string) =>
+        ctx.addIssue({ code: 'custom', path: [path], message });
+      if (!env.PUBLIC_ORIGIN?.startsWith('https://'))
+        reject('PUBLIC_ORIGIN', 'production requires the canonical HTTPS origin');
+      if (!env.TRUST_PROXY.length)
+        reject('TRUST_PROXY', 'production requires explicit trusted TLS proxy addresses');
+      if (!env.COOKIE_SECURE) reject('COOKIE_SECURE', 'must be true in production');
+      if (!env.SESSION_SECRET) reject('SESSION_SECRET', 'is required in production');
+      if (/^(root|admin|administrator)$/i.test(env.DB_USER))
+        reject('DB_USER', 'production requires a restricted runtime database account');
+      if (env.DB_PASSWORD.length < 12)
+        reject(
+          'DB_PASSWORD',
+          'production requires a strong database password of at least 12 characters',
+        );
+      if (!LOOPBACK_HOSTS.has(env.DB_HOST) && !env.DB_TLS)
+        reject('DB_TLS', 'remote production database connections require verified TLS');
+      if (env.CORS_ORIGINS.some((v) => !v.startsWith('https://')))
+        reject('CORS_ORIGINS', 'production origins must use HTTPS');
+      if (env.COMPETITION_RESET_ENABLED && env.MAINTENANCE_API_ENABLED !== 'true')
+        reject('COMPETITION_RESET_ENABLED', 'requires an explicitly enabled maintenance API');
+    }
+    if (env.DB_TLS && !env.DB_TLS_CA_FILE)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DB_TLS_CA_FILE'],
+        message: 'provide a trusted database CA certificate file when TLS is enabled',
+      });
     if (!LOOPBACK_HOSTS.has(env.HOST) && !env.ALLOW_NETWORK_ACCESS) {
       ctx.addIssue({
         code: 'custom',
@@ -72,6 +154,8 @@ export interface AppConfig {
   host: string;
   port: number;
   allowNetworkAccess: boolean;
+  web: WebConfig;
+  maintenance: { enabled: boolean; resetExecutionEnabled: boolean };
   db: {
     host: string;
     port: number;
@@ -79,8 +163,16 @@ export interface AppConfig {
     password: string;
     database: string;
     connectionLimit: number;
+    tls?: { caFile: string };
   };
   auth: AuthConfig;
+}
+
+export interface WebConfig {
+  publicOrigin?: string;
+  trustProxy: string[];
+  corsOrigins: string[];
+  requireHttps: boolean;
 }
 
 export interface AuthConfig {
@@ -110,6 +202,9 @@ export function parseConfig(raw: Record<string, string | undefined>): AppConfig 
     cleaned[key] = value === '' && key !== 'DB_PASSWORD' ? undefined : value;
   }
 
+  if (cleaned.NODE_ENV === 'production' && !cleaned.DB_NAME)
+    throw new ConfigError(['DB_NAME must be explicitly supplied in production']);
+
   const result = envSchema.safeParse(cleaned);
   if (!result.success) {
     throw new ConfigError(
@@ -123,6 +218,18 @@ export function parseConfig(raw: Record<string, string | undefined>): AppConfig 
     host: env.HOST,
     port: env.PORT,
     allowNetworkAccess: env.ALLOW_NETWORK_ACCESS,
+    web: {
+      publicOrigin: env.PUBLIC_ORIGIN,
+      trustProxy: env.TRUST_PROXY,
+      corsOrigins: env.CORS_ORIGINS,
+      requireHttps: env.NODE_ENV === 'production',
+    },
+    maintenance: {
+      enabled: env.MAINTENANCE_API_ENABLED
+        ? env.MAINTENANCE_API_ENABLED === 'true'
+        : env.NODE_ENV !== 'production',
+      resetExecutionEnabled: env.COMPETITION_RESET_ENABLED,
+    },
     db: {
       host: env.DB_HOST,
       port: env.DB_PORT,
@@ -130,6 +237,7 @@ export function parseConfig(raw: Record<string, string | undefined>): AppConfig 
       password: env.DB_PASSWORD,
       database: env.DB_NAME,
       connectionLimit: env.DB_CONNECTION_LIMIT,
+      ...(env.DB_TLS ? { tls: { caFile: env.DB_TLS_CA_FILE! } } : {}),
     },
     auth: {
       sessionSecret: env.SESSION_SECRET,
@@ -148,7 +256,7 @@ export function parseConfig(raw: Record<string, string | undefined>): AppConfig 
  * then validates. Variables already set in the environment win over the file.
  */
 export function loadConfig(envFile = resolve(process.cwd(), '.env')): AppConfig {
-  if (existsSync(envFile)) {
+  if (process.env.NODE_ENV !== 'production' && existsSync(envFile)) {
     process.loadEnvFile(envFile);
   }
   return parseConfig(process.env);
@@ -217,7 +325,7 @@ export function parseToolConfig(raw: Record<string, string | undefined>): ToolCo
 }
 
 export function loadToolConfig(envFile = resolve(process.cwd(), '.env')): ToolConfig {
-  if (existsSync(envFile)) {
+  if (process.env.NODE_ENV !== 'production' && existsSync(envFile)) {
     process.loadEnvFile(envFile);
   }
   return parseToolConfig(process.env);

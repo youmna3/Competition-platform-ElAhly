@@ -11,8 +11,21 @@ vi.mock('../src/auth/AuthContext', () => ({
 }));
 afterEach(() => {
   vi.unstubAllGlobals();
+  results = { official: { teams: [] }, provisional: [], notRanked: [] };
   auth.email = 'youmna54@gmail.com';
 });
+const team = (teamCode: string, assignedJudges: number) => ({
+  teamId: Number(teamCode.slice(-1)),
+  teamCode,
+  name: teamCode,
+  projectName: teamCode,
+  assignedJudges,
+});
+let results: unknown = {
+  official: { teams: [] },
+  provisional: [],
+  notRanked: [],
+};
 function setup(state = 'preparation', enabled = false) {
   const writes: { path: string; body: Record<string, unknown> }[] = [];
   vi.stubGlobal(
@@ -27,6 +40,10 @@ function setup(state = 'preparation', enabled = false) {
         preservedEmail: auth.email,
         backup: { name: 'fixture.sql', bytes: 10000, sha256: 'b'.repeat(64) },
       };
+      if (path.startsWith('/api/admin/results'))
+        return new Response(JSON.stringify(results), {
+          headers: { 'Content-Type': 'application/json' },
+        });
       const data = path.endsWith('/preview')
         ? preview
         : path.endsWith('/execute')
@@ -125,4 +142,16 @@ it('requires the exact phrase, a second password entry and final confirmation; p
     confirmed: true,
   });
   expect(screen.getByText('Review deletion preview')).toBeInTheDocument();
+});
+
+it('warns about active teams with fewer than three judges without blocking the start', async () => {
+  results = {
+    official: { teams: [team('T-1', 3)] },
+    provisional: [],
+    notRanked: [team('T-2', 2), team('T-3', 0)],
+  };
+  setup();
+  expect(await screen.findByText('2 active teams have fewer than 3 judges')).toBeInTheDocument();
+  expect(screen.getByText(/T-2 \(2\), T-3 \(0\)/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Start competition' })).toBeEnabled();
 });

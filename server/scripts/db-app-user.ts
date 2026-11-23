@@ -42,15 +42,13 @@ runScript(async () => {
     await conn.end();
   }
 
-  printSecretBox([
-    'Switch the API to the new account: edit server/.env so it contains',
-    '',
-    `DB_ADMIN_USER=${config.dbAdmin.user}`,
-    `DB_ADMIN_PASSWORD=${config.dbAdmin.password}`,
-    `DB_USER=${config.dbApp.user}`,
-    `DB_PASSWORD=${generated ? password : '<your DB_APP_PASSWORD>'}`,
-    '',
-    'then restart the API and run: npm run db:check',
-  ]);
+  if (generated)
+    printSecretBox([
+      'NEW RUNTIME DATABASE PASSWORD (shown once; store privately)',
+      `DB_USER=${config.dbApp.user}`,
+      `DB_PASSWORD=${password}`,
+    ]);
+  console.log('Configure DB_USER and DB_PASSWORD through the protected runtime environment.');
+  console.log('Keep DB_ADMIN_USER and DB_ADMIN_PASSWORD in the separate maintenance environment.');
   return 0;
 });

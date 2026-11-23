@@ -4,7 +4,8 @@ import {
   EVALUATION_ERRORS,
   EVALUATION_LIMITS,
   maximumScore,
-  isStarRating,
+  isPointsRubric,
+  isValidRating,
   scoreEvaluation,
   type EvaluationDetail,
   type EvaluationInput,
@@ -214,9 +215,15 @@ function computeScores(rubric: RubricVersion, ratingOf: Map<number, number | nul
     (n, s, i) => n + (rubric.sections[i]!.type === 'bonus' ? (s.score ?? 0) : 0),
     0,
   );
+  // Points drafts show the running sum of every point entered so far.
+  const enteredPoints = isPointsRubric(rubric)
+    ? matrix.reduce((sum, row) => sum + row.reduce<number>((n, v) => n + (v ?? 0), 0), 0)
+    : null;
   return {
     total:
-      breakdown.total ?? (rubric.scoringFormat === 3 ? partial : Math.round(partial * 1000) / 1000),
+      breakdown.total ??
+      enteredPoints ??
+      (rubric.scoringFormat === 3 ? partial : Math.round(partial * 1000) / 1000),
     base,
     bonus,
     complete: breakdown.total != null,
@@ -289,6 +296,7 @@ export function snapshotOf(
         sectionId: s.id,
         title: c.title,
         rating: byId.get(c.id)?.rating ?? null,
+        ...(c.maxPoints != null ? { maxPoints: c.maxPoints } : {}),
         note: byId.get(c.id)?.note ?? '',
       })),
     ),
@@ -308,6 +316,11 @@ export function checkInput(rubric: RubricVersion, input: EvaluationInput) {
       ),
     ),
   );
+  const maxPointsOf = new Map(
+    rubric.sections.flatMap((s) =>
+      s.criteria.map((c) => [c.id, c.maxPoints ?? undefined] as const),
+    ),
+  );
   const sections = new Set(rubric.sections.map((s) => s.id));
   const seen = new Set<number>();
   for (const r of input.ratings) {
@@ -315,9 +328,12 @@ export function checkInput(rubric: RubricVersion, input: EvaluationInput) {
       throw invalidInput('A rating refers to a criterion that is not in this rubric.');
     if (seen.has(r.criterionId)) throw invalidInput('A criterion was rated twice.');
     seen.add(r.criterionId);
-    if (r.rating !== null && !isStarRating(r.rating)) {
+    const max = maxPointsOf.get(r.criterionId);
+    if (r.rating !== null && !isValidRating({ maxPoints: max }, r.rating)) {
       throw invalidInput(
-        `${criteria.get(r.criterionId)}: ratings must be whole stars from 1 to 5.`,
+        max != null
+          ? `${criteria.get(r.criterionId)}: points must be a whole number from 0 to ${max}.`
+          : `${criteria.get(r.criterionId)}: ratings must be whole stars from 1 to 5.`,
       );
     }
     if (r.note.length > EVALUATION_LIMITS.criterionNote) {

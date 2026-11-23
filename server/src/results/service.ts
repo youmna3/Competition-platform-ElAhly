@@ -8,6 +8,7 @@
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import {
   rankTeams,
+  POINTS_FORMAT,
   scoreEvaluation,
   type DashboardResponse,
   type EvaluationProgress,
@@ -88,10 +89,12 @@ async function buildSnapshot(db: Db): Promise<Snapshot> {
 
   // Ratings of the submitted evaluations above, in rubric order, with weights.
   const [ratingRows] = await db.query<RowDataPacket[]>(
-    `SELECT es.evaluation_id, s.position AS section_pos, s.weight_percent, s.is_bonus, s.max_bonus_points, c.position AS criterion_pos, es.score
+    `SELECT es.evaluation_id, s.position AS section_pos, s.weight_percent, s.is_bonus, s.max_bonus_points, c.position AS criterion_pos, es.score,
+            c.max_score, rv.scoring_format
      FROM team_judges tj
      JOIN teams t ON t.id = tj.team_id AND t.status = 'active'
      JOIN evaluations e ON e.team_id = tj.team_id AND e.judge_id = tj.judge_id AND e.status = 'submitted'
+     JOIN rubric_versions rv ON rv.id = e.rubric_version_id
      JOIN rubric_sections s ON s.rubric_version_id = e.rubric_version_id
      JOIN rubric_criteria c ON c.section_id = s.id
      LEFT JOIN evaluation_scores es ON es.evaluation_id = e.id AND es.criterion_id = c.id
@@ -106,6 +109,8 @@ async function buildSnapshot(db: Db): Promise<Snapshot> {
         type: 'actual' | 'bonus';
         maxBonusPoints: number | null;
         scores: (number | null)[];
+        /** Points rubrics: each criterion's maximum, in order. */
+        maxima: number[] | null;
       }
     >
   >();
@@ -119,8 +124,10 @@ async function buildSnapshot(db: Db): Promise<Snapshot> {
       type: r.is_bonus ? 'bonus' : 'actual',
       maxBonusPoints: r.max_bonus_points == null ? null : Number(r.max_bonus_points),
       scores: [],
+      maxima: Number(r.scoring_format) === POINTS_FORMAT ? [] : null,
     };
     section.scores.push(r.score == null ? null : Number(r.score));
+    section.maxima?.push(Number(r.max_score));
     sections.set(pos, section);
     bySection.set(evaluationId, sections);
   }
@@ -133,7 +140,7 @@ async function buildSnapshot(db: Db): Promise<Snapshot> {
         weightPercent: s.weight,
         type: s.type,
         maxBonusPoints: s.maxBonusPoints,
-        criteria: s.scores,
+        criteria: s.maxima ? s.maxima.map((maxPoints) => ({ maxPoints })) : s.scores,
       })),
       ordered.map((s) => s.scores),
     );

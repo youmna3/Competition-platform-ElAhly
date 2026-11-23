@@ -206,7 +206,7 @@ export async function getTeamDetails(db: Db, id: number): Promise<TeamDetails> {
   return {
     ...toSummary(team),
     provisionalAverage: submittedRows.length
-      ? submittedRows.some((a) => Number(a.scoring_format) === 3)
+      ? submittedRows.some((a) => Number(a.scoring_format) >= 3)
         ? submittedRows.reduce((sum, a) => sum + Number(a.total_score), 0) / submittedRows.length
         : Math.round(
             (submittedRows.reduce((sum, a) => sum + Number(a.total_score), 0) /

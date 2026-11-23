@@ -102,7 +102,7 @@ export function HealthPanel({ refreshMs = 10_000 }: { refreshMs?: number }) {
           )}
         </StatusTile>
 
-        <StatusTile title="XAMPP MySQL database" tone={dbTone}>
+        <StatusTile title="Data service" tone={dbTone}>
           {db?.status === 'ok' ? (
             <>
               <Detail label="Response time" value={`${db.latencyMs} ms`} />

@@ -1,6 +1,7 @@
 import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
 import type { DatabaseHealth } from '@judging/shared';
 import type { AppConfig } from '../config.js';
+import { databaseSsl } from './tls.js';
 
 export function createPool(db: AppConfig['db']): Pool {
   return mysql.createPool({
@@ -8,6 +9,7 @@ export function createPool(db: AppConfig['db']): Pool {
     port: db.port,
     user: db.user,
     password: db.password,
+    ssl: databaseSsl(db),
     database: db.database,
     connectionLimit: db.connectionLimit,
     connectTimeout: 5_000,

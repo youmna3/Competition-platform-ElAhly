@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import {
   defaultRubricContent,
+  officialRubric2026,
   type AdminRubricResponse,
   type AuthUser,
   type RubricContent,
@@ -386,5 +387,142 @@ describe('View Rubric', () => {
     mockApi(judgeUser, () => undefined);
     renderAt('/admin/rubric');
     expect(await screen.findByText('Judge area')).toBeInTheDocument();
+  });
+});
+
+describe('Official 2026 rubric', () => {
+  const published = () =>
+    version(complete(), {
+      status: 'published',
+      versionNo: 1,
+      publishedAt: '2026-11-20T10:00:00.000Z',
+    });
+  const officialDraft = () => version(officialRubric2026(), { versionNo: 2, revision: 3 });
+
+  it('loads the official rubric into a new draft without publishing it', async () => {
+    const pub = published();
+    let draft: RubricVersion | null = null;
+    const calls = mockApi(adminUser, (c) => {
+      if (c.url === '/api/admin/rubric' && c.method === 'GET')
+        return {
+          status: 200,
+          body: {
+            state: draft ? 'published_with_draft' : 'published',
+            published: pub,
+            draft,
+            evaluations: noEvaluations,
+          },
+        };
+      if (c.url === '/api/admin/rubric/draft/official' && c.method === 'POST') {
+        draft = officialDraft();
+        return {
+          status: 200,
+          body: {
+            state: 'published_with_draft',
+            published: pub,
+            draft,
+            evaluations: noEvaluations,
+          },
+        };
+      }
+      return undefined;
+    });
+    renderAt('/admin/rubric');
+    await userEvent.click(await screen.findByRole('button', { name: 'Load Official 2026 Rubric' }));
+    await screen.findByText(/Official 2026 rubric loaded into the draft/);
+    expect(calls.find((c) => c.url === '/api/admin/rubric/draft/official')!.body).toEqual({
+      replaceDraft: false,
+    });
+    expect(calls.some((c) => c.url.endsWith('/publish'))).toBe(false);
+    // The editor now shows the points rubric: 12 maximum-point fields totalling 100.
+    expect(screen.getByRole('combobox', { name: 'Scoring method' })).toHaveValue('points');
+    const maxima = screen.getAllByLabelText(/^Maximum points for criterion/);
+    expect(maxima.map((m) => (m as HTMLInputElement).value)).toEqual([
+      '10',
+      '10',
+      '10',
+      '10',
+      '8',
+      '7',
+      '7',
+      '8',
+      '10',
+      '8',
+      '6',
+      '6',
+    ]);
+    expect(screen.getAllByText('100 / 100').length).toBeGreaterThan(0);
+    expect(screen.getByText('Ready to publish')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Prompt clarity & structure')).toBeInTheDocument();
+    expect(screen.getAllByText('Version 1', { exact: false }).length).toBeGreaterThan(0);
+  });
+
+  it('asks before replacing an existing draft', async () => {
+    const pub = published();
+    const existing = version(complete(), { versionNo: 2 });
+    const calls = mockApi(adminUser, (c) => {
+      if (c.url === '/api/admin/rubric' && c.method === 'GET')
+        return {
+          status: 200,
+          body: {
+            state: 'published_with_draft',
+            published: pub,
+            draft: existing,
+            evaluations: noEvaluations,
+          },
+        };
+      if (c.url === '/api/admin/rubric/draft/official')
+        return {
+          status: 200,
+          body: {
+            state: 'published_with_draft',
+            published: pub,
+            draft: officialDraft(),
+            evaluations: noEvaluations,
+          },
+        };
+      return undefined;
+    });
+    renderAt('/admin/rubric');
+    await userEvent.click(await screen.findByRole('button', { name: 'Load Official 2026 Rubric' }));
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Replace the draft with the official 2026 rubric?',
+    });
+    expect(calls.some((c) => c.url === '/api/admin/rubric/draft/official')).toBe(false);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Load official rubric' }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.url === '/api/admin/rubric/draft/official')?.body).toEqual({
+        replaceDraft: true,
+      }),
+    );
+  });
+});
+
+describe('Rubric preview dialog', () => {
+  it('closes with the X button, the Close preview button, Escape and a click outside', async () => {
+    const draft = version(complete(), { versionNo: 1 });
+    mockApi(adminUser, (c) =>
+      c.url === '/api/admin/rubric' && c.method === 'GET' ? draftResponse(draft) : undefined,
+    );
+    renderAt('/admin/rubric');
+    const open = async () => {
+      await userEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+      return screen.findByRole('dialog', { name: 'Preview' });
+    };
+    let dialog = await open();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    dialog = await open();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close preview' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await open();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    dialog = await open();
+    await userEvent.click(dialog.parentElement!);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

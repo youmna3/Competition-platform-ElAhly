@@ -1,9 +1,14 @@
 import { requireCompetitionState } from '../competition/service.js';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import {
+  POINTS_FORMAT,
+  POINTS_LIMITS,
   RUBRIC_ERRORS,
   RUBRIC_SHAPE,
   contentOf,
+  isPointsRubric,
+  officialRubric2026,
+  sectionPoints,
   defaultRubricContent,
   totalWeight,
   validateRubric,
@@ -44,13 +49,15 @@ export async function loadVersion(db: Db, id: number): Promise<RubricVersion | n
     [id],
   );
   const [criteria] = await db.query<RowDataPacket[]>(
-    `SELECT id, section_id, title, description, guidelines
+    `SELECT id, section_id, title, description, guidelines, max_score
      FROM rubric_criteria WHERE rubric_version_id = ? ORDER BY section_id, position`,
     [id],
   );
+  const format = Number(v.scoring_format);
+  const points = format === POINTS_FORMAT;
   return {
     id: Number(v.id),
-    scoringFormat: Number(v.scoring_format) === 3 ? 3 : Number(v.scoring_format) === 2 ? 2 : 1,
+    scoringFormat: points ? POINTS_FORMAT : format === 3 ? 3 : format === 2 ? 2 : 1,
     versionNo: Number(v.version_no),
     status: v.status as RubricVersionStatus,
     revision: Number(v.revision),
@@ -76,6 +83,7 @@ export async function loadVersion(db: Db, id: number): Promise<RubricVersion | n
           title: String(c.title),
           description: String(c.description ?? ''),
           guidelines: String(c.guidelines ?? ''),
+          ...(points ? { maxPoints: Number(c.max_score) } : {}),
         })),
     })),
   };
@@ -176,8 +184,8 @@ async function writeVersionFields(
       orNull(c.description),
       orNull(c.instructions),
       c.scoringFormat ?? 1,
-      RUBRIC_SHAPE.minStars,
-      RUBRIC_SHAPE.maxStars,
+      isPointsRubric(c) ? 0 : RUBRIC_SHAPE.minStars,
+      isPointsRubric(c) ? POINTS_LIMITS.maxPoints : RUBRIC_SHAPE.maxStars,
       (c.scoringFormat ?? 1) >= 2 ? 'add_to_total' : 'separate',
       RUBRIC_SHAPE.maxScore,
       actor.id,
@@ -191,6 +199,7 @@ async function writeVersionFields(
  * from section points / (question count * 5), never manually configured.
  */
 async function writeStructure(conn: PoolConnection, id: number, c: RubricContent) {
+  const points = isPointsRubric(c);
   const [oldSections] = await conn.query<RowDataPacket[]>(
     'SELECT id FROM rubric_sections WHERE rubric_version_id=?',
     [id],
@@ -219,12 +228,14 @@ async function writeStructure(conn: PoolConnection, id: number, c: RubricContent
         false,
       );
     const bonus = section.type === 'bonus';
+    // Points: a section's points are the sum of its criterion maxima (derived, never typed).
+    const sectionTotal = points ? sectionPoints(section) : null;
     const values = [
       i + 1,
       section.title.trim(),
       orNull(section.description),
       bonus,
-      bonus ? null : section.weightPercent,
+      bonus ? null : points ? sectionTotal || null : section.weightPercent,
       bonus ? (section.maxBonusPoints ?? null) : null,
     ];
     let sectionId = section.id;
@@ -247,17 +258,28 @@ async function writeStructure(conn: PoolConnection, id: number, c: RubricContent
           [{ path: 'sections', message: 'Unknown, moved or duplicate draft criterion ID.' }],
           false,
         );
-      const points = bonus ? section.maxBonusPoints : section.weightPercent;
-      const fields = [
-        j + 1,
-        cr.title.trim(),
-        orNull(cr.description),
-        orNull(cr.guidelines),
-        1,
-        5,
-        points == null ? 1 : points / (safelyCount(section.criteria.length) * 5),
-        !bonus,
-      ];
+      const starPoints = bonus ? section.maxBonusPoints : section.weightPercent;
+      const fields = points
+        ? [
+            j + 1,
+            cr.title.trim(),
+            orNull(cr.description),
+            orNull(cr.guidelines),
+            0,
+            cr.maxPoints!,
+            1,
+            true,
+          ]
+        : [
+            j + 1,
+            cr.title.trim(),
+            orNull(cr.description),
+            orNull(cr.guidelines),
+            1,
+            5,
+            starPoints == null ? 1 : starPoints / (safelyCount(section.criteria.length) * 5),
+            !bonus,
+          ];
       if (cr.id != null) {
         await conn.query(
           'UPDATE rubric_criteria SET position=?,title=?,description=?,guidelines=?,min_score=?,max_score=?,weight=?,is_required=? WHERE id=?',
@@ -360,7 +382,8 @@ export function createDraft(pool: Pool, actor: Actor, sourceVersionId?: number) 
     );
     const content = base ? contentOf(base) : defaultRubricContent();
     // A restored version is a NEW editable format. Original versions and evaluations stay untouched.
-    content.scoringFormat = 3;
+    // Points rubrics stay points rubrics; star rubrics become the variable star format.
+    content.scoringFormat = base && isPointsRubric(base) ? POINTS_FORMAT : 3;
     for (const section of content.sections) {
       delete section.id;
       for (const criterion of section.criteria) delete criterion.id;
@@ -483,4 +506,31 @@ export function publishDraft(pool: Pool, actor: Actor, revision: number, confirm
     });
     return { versionNo, published: (await loadVersion(conn, draftId))! };
   });
+}
+
+/**
+ * Fills the rubric draft with the official 2026 points rubric. Creates a draft
+ * when there is none; replaces an existing draft's content only when the
+ * administrator confirmed it. Never publishes: the draft is left for review.
+ */
+export async function loadOfficialRubric(pool: Pool, actor: Actor, replaceDraft: boolean) {
+  let state = await getAdminRubric(pool);
+  if (state.draft && !replaceDraft)
+    throw new RuleError(
+      409,
+      RUBRIC_ERRORS.DRAFT_EXISTS,
+      'A draft already exists. Confirm to replace its content with the official 2026 rubric.',
+    );
+  if (!state.draft) state = await createDraft(pool, actor);
+  const draft = await saveDraft(pool, actor, state.draft!.revision, officialRubric2026());
+  await writeAudit(pool, {
+    actorId: actor.id,
+    actorEmail: actor.email,
+    action: 'rubric.official_loaded',
+    entityType: 'rubric',
+    entityId: draft.versionNo,
+    ipAddress: actor.ip,
+    details: { version_no: draft.versionNo, replaced_existing_draft: replaceDraft },
+  });
+  return getAdminRubric(pool);
 }

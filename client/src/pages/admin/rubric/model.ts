@@ -1,4 +1,4 @@
-import type { RubricContent, RubricIssue } from '@judging/shared';
+import type { RubricContent, RubricIssue, ScoringFormat } from '@judging/shared';
 
 /**
  * The editor keeps the weight as the text the admin typed (so the field can be
@@ -10,6 +10,8 @@ export interface EditCriterion {
   title: string;
   description: string;
   guidelines: string;
+  /** Points rubrics: the criterion's maximum points as typed. */
+  maxPoints: string;
 }
 
 export interface EditSection {
@@ -24,7 +26,7 @@ export interface EditSection {
 }
 
 export interface EditRubric {
-  scoringFormat?: 1 | 2 | 3;
+  scoringFormat?: ScoringFormat;
   title: string;
   description: string;
   instructions: string;
@@ -54,6 +56,7 @@ export function toEdit(c: RubricContent): EditRubric {
         title: cr.title,
         description: cr.description,
         guidelines: cr.guidelines,
+        maxPoints: cr.maxPoints == null ? '' : String(cr.maxPoints),
       })),
     })),
   };
@@ -73,13 +76,23 @@ export function toContent(e: EditRubric): RubricContent {
       title: s.title,
       description: s.description,
       // Empty means "not set yet"; anything else is checked by validateRubric.
+      // Points rubrics derive a section's points from its criteria.
       weightPercent:
-        s.type === 'bonus' ? null : s.weightPercent.trim() === '' ? null : Number(s.weightPercent),
+        s.type === 'bonus'
+          ? null
+          : e.scoringFormat === 4
+            ? s.criteria.reduce((n, c) => n + (Number(c.maxPoints) || 0), 0) || null
+            : s.weightPercent.trim() === ''
+              ? null
+              : Number(s.weightPercent),
       criteria: s.criteria.map((c) => ({
         id: c.id,
         title: c.title,
         description: c.description,
         guidelines: c.guidelines,
+        ...(e.scoringFormat === 4
+          ? { maxPoints: c.maxPoints.trim() === '' ? null : Number(c.maxPoints) }
+          : {}),
       })),
     })),
   };

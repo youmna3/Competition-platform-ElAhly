@@ -6,7 +6,8 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 import type { Pool } from 'mysql2/promise';
 import type { DatabaseHealth } from '@judging/shared';
-import type { AuthConfig } from './config.js';
+import type { AuthConfig, WebConfig } from './config.js';
+import { transportSecurity } from './middleware/transport.js';
 import {
   loadUser,
   sameOriginOnly,
@@ -21,6 +22,7 @@ import { adminRouter, judgeRouter } from './routes/protected.js';
 import { apiNotFound, errorHandler, requestLogger } from './middleware/errors.js';
 
 export interface AppOptions {
+  web?: WebConfig;
   maintenance?: MaintenanceOptions;
   checkDatabase: () => Promise<DatabaseHealth>;
   environment: string;
@@ -37,7 +39,7 @@ export function createApp(options: AppOptions): Express {
   const app = express();
 
   app.disable('x-powered-by');
-  app.set('trust proxy', false);
+  app.set('trust proxy', options.web?.trustProxy.length ? options.web.trustProxy : false);
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -51,12 +53,12 @@ export function createApp(options: AppOptions): Express {
           'font-src': ["'self'"],
           // Styles only from this origin (inline style attributes are used by React).
           'style-src': ["'self'", "'unsafe-inline'"],
-          // HTTPS is introduced later; don't force-upgrade requests on plain-HTTP localhost.
-          'upgrade-insecure-requests': null,
+          'upgrade-insecure-requests': options.web?.requireHttps ? [] : null,
         },
       },
-      // HSTS only makes sense once HTTPS is enabled (Phase 10).
-      strictTransportSecurity: false,
+      strictTransportSecurity: options.web?.requireHttps
+        ? { maxAge: 31536000, includeSubDomains: false }
+        : false,
     }),
   );
   if (options.logRequests) app.use(requestLogger);
@@ -67,7 +69,8 @@ export function createApp(options: AppOptions): Express {
     res.set('Cache-Control', 'no-store');
     next();
   });
-  app.use('/api', sameOriginOnly);
+  if (options.web?.publicOrigin) app.use(transportSecurity(options.web));
+  else app.use('/api', sameOriginOnly);
 
   app.use(
     '/api/health',

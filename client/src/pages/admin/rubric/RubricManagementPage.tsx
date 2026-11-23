@@ -3,8 +3,11 @@ import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import {
+  COMPETITION_LABELS,
   RUBRIC_ERRORS,
   contentOf,
+  isPointsRubric,
+  maximumScore,
   totalWeight,
   validateRubric,
   type AdminRubricResponse,
@@ -16,7 +19,7 @@ import { ApiError, api } from '../../../api/client';
 import { FullPageSpinner } from '../../../components/FullPageSpinner';
 import { Modal } from '../../../components/Modal';
 import { useToast } from '../../../components/Toast';
-import { Alert, Badge, Button, Card } from '../../../components/ui';
+import { Alert, Badge, Button, Card, PageHeader } from '../../../components/ui';
 import { ConfirmDialog } from '../users/dialogs';
 import { RubricView } from '../../rubric/RubricView';
 import { RubricEditor } from './RubricEditor';
@@ -32,7 +35,8 @@ const formatDate = (value: string | null) =>
     : '—';
 const snapshot = (c: RubricContent) => JSON.stringify(c);
 
-type Dialog = { kind: 'preview' } | { kind: 'publish' } | { kind: 'discard' };
+type Dialog =
+  { kind: 'preview' } | { kind: 'publish' } | { kind: 'discard' } | { kind: 'official' };
 
 export function RubricManagementPage() {
   const lifecycle = useCompetition();
@@ -106,6 +110,27 @@ export function RubricManagementPage() {
     }
   }
 
+  /** Fills the draft with the official 2026 points rubric (never publishes). */
+  async function loadOfficial(replaceDraft: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api<AdminRubricResponse>('/api/admin/rubric/draft/official', {
+        method: 'POST',
+        body: { replaceDraft },
+      });
+      queryClient.setQueryData(QUERY_KEY, result);
+      if (result.draft) load(result.draft);
+      setDialog(null);
+      toast('Official 2026 rubric loaded into the draft. Review it, then publish when ready.');
+    } catch (e) {
+      setDialog(null);
+      handleError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** Saves the editor's content; returns the new revision. */
   async function save(): Promise<number> {
     const result = await api<{ draft: RubricVersion }>('/api/admin/rubric/draft', {
@@ -161,28 +186,88 @@ export function RubricManagementPage() {
       onRestore={(id) => void startDraft(id)}
     />
   );
+  const lockedNo = lifecycle.data?.lockedRubricVersionNo ?? null;
+  const officialButton = (
+    <Button
+      onClick={() => (draft ? setDialog({ kind: 'official' }) : void loadOfficial(false))}
+      disabled={busy || rubricLocked}
+    >
+      Load Official 2026 Rubric
+    </Button>
+  );
   const header = (
-    <div className="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <p className="eyebrow">Administrator</p>
-        <h1 className="text-2xl font-bold sm:text-3xl">Rubric Management</h1>
-        <p className="mt-1 max-w-2xl text-sm text-black/60">
-          The active rubric is used for new evaluations. Published versions never change; edits go
-          into a draft until you publish them.
-        </p>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {published ? (
-          <Badge tone="green">Published · version {published.versionNo}</Badge>
-        ) : (
-          !draft && <Badge tone="gray">Not configured</Badge>
-        )}
-        {draft && <Badge tone="gold">Draft · version {draft.versionNo}</Badge>}
-        {published && (
-          <Link to="/rubric" className="secondary-link">
-            View as judges see it →
-          </Link>
-        )}
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Administrator"
+        title="Rubric Management"
+        description="Published versions never change. Edits go into a draft, and judges keep using the published version until you publish the draft."
+        actions={
+          published && (
+            <Link to="/rubric" className="secondary-link">
+              View as judges see it →
+            </Link>
+          )
+        }
+      />
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="rubric-status space-y-2 border-emerald-600/25">
+          <p className="eyebrow !text-emerald-700">Used for judging</p>
+          {published ? (
+            <>
+              <p className="text-xl font-bold">
+                Version {published.versionNo}{' '}
+                <Badge tone="green">{lockedNo != null ? 'Locked' : 'Published'}</Badge>
+              </p>
+              <p className="truncate text-sm font-medium text-ink">{published.title}</p>
+              <p className="text-sm text-muted">
+                {isPointsRubric(published) ? 'Numeric points' : 'Star scoring'} · out of{' '}
+                {maximumScore(published.sections)} · {evaluations.onPublished} evaluation
+                {evaluations.onPublished === 1 ? '' : 's'}
+              </p>
+              {lifecycle.data && (
+                <p className="text-xs text-muted">
+                  Competition: {COMPETITION_LABELS[lifecycle.data.state]}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-muted">No published rubric yet. Judges can’t score.</p>
+          )}
+        </Card>
+        <Card className="rubric-status space-y-2 border-ahly-gold/50">
+          <p className="eyebrow !text-amber-800">Draft for review</p>
+          {draft ? (
+            <>
+              <p className="text-xl font-bold">
+                Version {draft.versionNo} <Badge tone="gold">Not published</Badge>
+              </p>
+              <p className="truncate text-sm font-medium text-ink">
+                {draft.title || 'Untitled draft'}
+              </p>
+              <p className="text-sm text-muted">
+                {isPointsRubric(draft) ? 'Numeric points' : 'Star scoring'} · saved{' '}
+                {formatDate(draft.updatedAt)}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted">
+              No draft. Edit the rubric or load the official rubric to create one.
+            </p>
+          )}
+        </Card>
+        <Card className="rubric-status space-y-3 border-ischool-blue/30 bg-ischool-blue-soft/40">
+          <p className="eyebrow">Official 2026 rubric</p>
+          <p className="text-sm text-ink">
+            4 sections · 12 criteria · numeric points totalling <strong>100</strong> (A 30, B 25, C
+            25, D 20), from the official judging criteria document.
+          </p>
+          {officialButton}
+          <p className="text-xs text-muted">
+            {rubricLocked
+              ? 'The rubric is locked while the competition is not in Preparation.'
+              : 'Saved as a draft for your review. It is never published automatically.'}
+          </p>
+        </Card>
       </div>
     </div>
   );
@@ -200,7 +285,6 @@ export function RubricManagementPage() {
     return (
       <div className="space-y-6">
         {header}
-        {history}
         {error && <Alert tone="error">{error}</Alert>}
         {mixedWarning}
         {!published ? (
@@ -244,19 +328,24 @@ export function RubricManagementPage() {
             <RubricView rubric={contentOf(published)} />
           </>
         )}
+        {history}
       </div>
     );
   }
 
   // ---- Editing a draft ----
   const saveErrors = issueMap(validation.save);
-  const weightTotal = totalWeight(content.sections);
+  const weightTotal = isPointsRubric(content)
+    ? content.sections.reduce(
+        (n, sec) => n + sec.criteria.reduce((m, c) => m + (c.maxPoints ?? 0), 0),
+        0,
+      )
+    : totalWeight(content.sections);
   const allIssues = [...validation.save, ...validation.publish];
 
   return (
     <div className="space-y-6 pb-24">
       {header}
-      {history}
       {mixedWarning}
       {conflict && (
         <Alert tone="error" title="This draft was changed somewhere else">
@@ -285,9 +374,10 @@ export function RubricManagementPage() {
               : `${allIssues.length} thing${allIssues.length === 1 ? '' : 's'} to fix before publishing`}
           </h2>
           <span className="text-sm text-black/60">
-            Total weight:{' '}
+            {isPointsRubric(content) ? 'Total points' : 'Total weight'}:{' '}
             <strong className={weightTotal === 100 ? 'text-emerald-700' : 'text-ahly-red-dark'}>
-              {weightTotal}% / 100%
+              {weightTotal}
+              {isPointsRubric(content) ? '' : '%'} / 100{isPointsRubric(content) ? '' : '%'}
             </strong>
           </span>
         </div>
@@ -325,6 +415,7 @@ export function RubricManagementPage() {
       <fieldset disabled={rubricLocked}>
         <RubricEditor value={edit} onChange={setEdit} errors={saveErrors} content={content} />
       </fieldset>
+      {history}
 
       {/* Sticky action bar */}
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-black/10 bg-white/95 backdrop-blur">
@@ -378,16 +469,17 @@ export function RubricManagementPage() {
           description="This is how judges will see the rubric."
           onClose={() => setDialog(null)}
           size="lg"
+          focusPanel
+          footer={
+            <Button variant="secondary" onClick={() => setDialog(null)}>
+              Close preview
+            </Button>
+          }
         >
           <Alert tone="warning">
             Preview of the draft. It isn’t published{dirty ? ' or saved' : ''}.
           </Alert>
           <RubricView rubric={content} practice />
-          <div className="flex justify-end">
-            <Button variant="secondary" onClick={() => setDialog(null)}>
-              Close preview
-            </Button>
-          </div>
         </Modal>
       )}
 
@@ -414,6 +506,16 @@ export function RubricManagementPage() {
             toast(`Rubric version ${result.versionNo} is published.`);
           }}
           onError={handleError}
+        />
+      )}
+
+      {dialog?.kind === 'official' && (
+        <ConfirmDialog
+          title="Replace the draft with the official 2026 rubric?"
+          message={`Draft version ${draft.versionNo} will be filled with the 4 sections and 12 criteria of the official rubric (numeric points, 100 in total).${dirty ? ' Your unsaved changes in the editor will be lost.' : ''} Nothing is published, and published versions and evaluations are not changed.`}
+          confirmLabel="Load official rubric"
+          onClose={() => setDialog(null)}
+          onConfirm={() => loadOfficial(true)}
         />
       )}
 
@@ -627,7 +729,9 @@ function RubricHistory({
               </Badge>
             </p>
             <p className="text-sm text-muted">
-              {v.publishedAt ? `Published ${formatDate(v.publishedAt)}` : 'Not published'}
+              {v.publishedAt ? `Published ${formatDate(v.publishedAt)}` : 'Not published'} ·{' '}
+              {isPointsRubric(v) ? 'Numeric points' : 'Star scoring'}
+              {v.title ? ` · ${v.title}` : ''}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -648,7 +752,17 @@ function RubricHistory({
         </p>
       )}
       {preview && (
-        <Modal title={`Preview version ${preview.versionNo}`} onClose={() => setPreview(null)}>
+        <Modal
+          title={`Preview version ${preview.versionNo}`}
+          onClose={() => setPreview(null)}
+          size="lg"
+          focusPanel
+          footer={
+            <Button variant="secondary" onClick={() => setPreview(null)}>
+              Close preview
+            </Button>
+          }
+        >
           <RubricView rubric={contentOf(preview)} />
         </Modal>
       )}

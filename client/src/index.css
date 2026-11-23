@@ -112,6 +112,18 @@ body {
   .eyebrow {
     @apply text-xs font-semibold tracking-widest text-ischool-blue-dark uppercase;
   }
+  /* Al Ahly red: a short marker before every section label. */
+  .eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 14px;
+    height: 3px;
+    margin-right: 8px;
+    border-radius: 2px;
+    background: var(--color-ahly-red);
+    vertical-align: middle;
+    transform: translateY(-1px);
+  }
 }
 /* Competition interface: shared surfaces, rhythm and navigation. */
 @layer components {
@@ -141,46 +153,6 @@ body {
     border-left-width: 4px;
     border-radius: 14px;
     padding: 16px 20px;
-  }
-  .top-teams {
-    padding: 24px;
-    border: 1px solid #dbe7f7;
-    border-radius: 24px;
-    background: #eaf2fc;
-  }
-  .leaders-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-    gap: 16px;
-    margin-top: 20px;
-  }
-  .leader-card {
-    min-width: 0;
-    overflow-wrap: anywhere;
-    background: white;
-    border: 1px solid #dce6f2;
-    border-radius: 18px;
-    padding: 22px;
-    box-shadow: 0 6px 20px -16px #142d55;
-  }
-  .leader-first {
-    border-top: 4px solid #d9a428;
-    padding-top: 19px;
-  }
-  .leader-rank {
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 14px;
-    background: #edf5ff;
-    color: #045bc4;
-    font-size: 20px;
-    font-weight: 750;
-  }
-  .leader-first .leader-rank {
-    background: #fff4d8;
-    color: #79520b;
   }
   .app-shell main > div > div:first-child h1 {
     font-size: clamp(1.65rem, 2.2vw, 2.15rem);
@@ -214,15 +186,6 @@ body {
   }
   .app-shell header {
     box-shadow: 0 4px 20px -16px #142d55;
-  }
-  @media (max-width: 639px) {
-    .top-teams {
-      padding: 16px;
-      border-radius: 18px;
-    }
-    .leader-card {
-      padding: 18px;
-    }
   }
 }
 @layer components {
@@ -268,6 +231,7 @@ body {
   }
   .app-shell > header nav {
     flex-direction: column;
+    flex-wrap: nowrap;
     padding: 12px 16px;
     overflow-y: auto;
     gap: 6px;
@@ -275,7 +239,9 @@ body {
   .app-shell > header nav a[aria-current='page'] {
     background: #056fec;
     color: white;
-    box-shadow: 0 4px 12px -5px #056fec90;
+    box-shadow:
+      inset 4px 0 0 var(--color-ahly-red),
+      0 4px 12px -5px #056fec90;
   }
   .app-shell > main {
     margin-left: 244px;
@@ -298,4 +264,23 @@ body {
   html {
     scroll-padding-top: 32px;
   }
+}
+
+/* Al Ahly red accents on the top and tablet navigation (below the sidebar breakpoint). */
+@media (max-width: 1279px) {
+  .app-shell > header nav a[aria-current='page'] {
+    box-shadow: inset 0 -3px 0 var(--color-ahly-red);
+  }
+}
+/* Red marker for headings inside the blue banners. */
+.hero-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  margin-right: 10px;
+  border-radius: 2px;
+  background: var(--color-ahly-red);
+  vertical-align: middle;
+  transform: translateY(-1px);
 }

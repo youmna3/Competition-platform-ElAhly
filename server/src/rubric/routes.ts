@@ -7,6 +7,7 @@ import {
   createDraft,
   discardDraft,
   getAdminRubric,
+  loadOfficialRubric,
   publishDraft,
   saveDraft,
   loadVersion,
@@ -23,6 +24,7 @@ const criterion = z
     title: text(L.criterionTitle),
     description: text(L.criterionDescription),
     guidelines: text(L.guidelines),
+    maxPoints: z.number().finite().nullable().optional(),
   })
   .strict();
 
@@ -40,7 +42,7 @@ const section = z
 
 const content = z
   .object({
-    scoringFormat: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+    scoringFormat: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
     title: text(L.title),
     description: text(L.description),
     instructions: text(L.instructions),
@@ -84,6 +86,16 @@ export function rubricAdminRouter(pool: Pool): Router {
       .safeParse(req.body ?? {});
     if (!parsed.success) return invalidShape(res, parsed.error);
     res.status(201).json(await createDraft(pool, actorOf(req), parsed.data.sourceVersionId));
+  });
+
+  // Fills the draft with the official 2026 points rubric. Never publishes.
+  router.post('/draft/official', async (req, res) => {
+    const parsed = z
+      .object({ replaceDraft: z.boolean().optional().default(false) })
+      .strict()
+      .safeParse(req.body ?? {});
+    if (!parsed.success) return invalidShape(res, parsed.error);
+    res.json(await loadOfficialRubric(pool, actorOf(req), parsed.data.replaceDraft));
   });
 
   router.get('/versions/:id', async (req, res) => {

@@ -31,6 +31,12 @@ export const RUBRIC_SHAPE = {
   maxScore: 100,
 } as const;
 
+export type ScoringFormat = 1 | 2 | 3 | 4;
+export const POINTS_FORMAT = 4;
+export const POINTS_LIMITS = { sections: 10, criteriaPerSection: 10, maxPoints: 100 } as const;
+export const isPointsRubric = (r: { scoringFormat?: number | null }) =>
+  r.scoringFormat === POINTS_FORMAT;
+
 export const RUBRIC_LIMITS = {
   title: 200,
   description: 5000,
@@ -52,6 +58,8 @@ export interface RubricCriterionInput {
   description: string;
   /** What judges should look for, optional. */
   guidelines: string;
+  /** Points rubrics (scoring format 4) only: the criterion's maximum, 1–100 whole points. */
+  maxPoints?: number | null;
 }
 
 export interface RubricSectionInput {
@@ -67,8 +75,12 @@ export interface RubricSectionInput {
 
 /** Versioned configuration; array order defines section and question order. */
 export interface RubricContent {
-  /** Absent/1: immutable legacy four-section scoring. 2: dynamic Actual + optional Bonus. */
-  scoringFormat?: 1 | 2 | 3;
+  /**
+   * Absent/1: legacy four-section stars. 2: Actual + optional Bonus stars.
+   * 3: 1–10 equal star questions per section. 4: numeric points (0 to each
+   * criterion's maximum; a section's points are the sum of its criteria).
+   */
+  scoringFormat?: ScoringFormat;
   title: string;
   description: string;
   instructions: string;
@@ -195,6 +207,38 @@ export const isStarRating = (n: unknown): n is number =>
   n >= RUBRIC_SHAPE.minStars &&
   n <= RUBRIC_SHAPE.maxStars;
 
+/** A whole number of points from 0 to `max`. */
+export const isPointScore = (n: unknown, max: number): n is number =>
+  typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= max;
+
+/**
+ * The criterion maxima of a points section, or null for a star section. A
+ * section is points-based when every criterion carries a numeric maxPoints.
+ */
+export function pointMaxima(s: { criteria?: readonly unknown[] }): number[] | null {
+  const list = s.criteria;
+  if (!list || list.length === 0) return null;
+  const maxima = list.map((c) =>
+    c != null &&
+    typeof c === 'object' &&
+    typeof (c as { maxPoints?: unknown }).maxPoints === 'number'
+      ? (c as { maxPoints: number }).maxPoints
+      : null,
+  );
+  return maxima.every((m) => m != null && m > 0) ? (maxima as number[]) : null;
+}
+
+/** Valid input for one criterion: points 0..max for points criteria, otherwise 1–5 stars. */
+export function isValidRating(criterion: { maxPoints?: number | null }, value: unknown) {
+  return typeof criterion.maxPoints === 'number'
+    ? isPointScore(value, criterion.maxPoints)
+    : isStarRating(value);
+}
+
+/** Points of a points section: the sum of its criterion maxima. */
+export const sectionPoints = (s: { criteria: readonly { maxPoints?: number | null }[] }) =>
+  s.criteria.reduce((sum, c) => sum + (c.maxPoints ?? 0), 0);
+
 /** Sum of the section weights that are set. */
 export function totalWeight(sections: ScoringSection[]): number {
   return sections.reduce((sum, s) => sum + (s.type === 'bonus' ? 0 : (s.weightPercent ?? 0)), 0);
@@ -204,8 +248,11 @@ export type ScoringSection = Pick<
   RubricSectionInput,
   'weightPercent' | 'type' | 'maxBonusPoints'
 > & { criteria?: readonly unknown[] };
-export const sectionMaximum = (s: ScoringSection) =>
-  s.type === 'bonus' ? (s.maxBonusPoints ?? 0) : (s.weightPercent ?? 0);
+export const sectionMaximum = (s: ScoringSection) => {
+  const maxima = pointMaxima(s);
+  if (maxima) return maxima.reduce((a, b) => a + b, 0);
+  return s.type === 'bonus' ? (s.maxBonusPoints ?? 0) : (s.weightPercent ?? 0);
+};
 export const maximumScore = (sections: ScoringSection[]) =>
   100 + sections.reduce((sum, s) => sum + (s.type === 'bonus' ? (s.maxBonusPoints ?? 0) : 0), 0);
 
@@ -236,8 +283,9 @@ export interface ScoreBreakdown {
 }
 
 /**
- * Scores one evaluation. `ratings[i][j]` is the star rating (1–5) for
- * criterion j of section i, or null if it isn't rated yet.
+ * Scores one evaluation. `ratings[i][j]` is the value for criterion j of
+ * section i (1–5 stars, or 0..max points for points sections), or null if it
+ * isn't scored yet.
  */
 export function scoreEvaluation(
   sections: ScoringSection[],
@@ -248,6 +296,18 @@ export function scoreEvaluation(
   const result = sections.map((s, i) => {
     const r = ratings[i] ?? [];
     const weightPercent = sectionMaximum(s);
+    const maxima = pointMaxima(s);
+    if (maxima) {
+      // Points: the section is the plain sum of its criteria, complete once all are scored.
+      const complete = r.length === maxima.length && r.every((v, j) => isPointScore(v, maxima[j]!));
+      return complete
+        ? {
+            rating: null,
+            score: (r as number[]).reduce((sum, v) => sum + v, 0),
+            weightPercent,
+          }
+        : { rating: null, score: null, weightPercent };
+    }
     const count = s.criteria?.length ?? 2;
     if (s.type === 'bonus' && count > 0 && r.length === count && r.every((v) => v == null))
       return { rating: null, score: 0, weightPercent };
@@ -351,7 +411,9 @@ export function validateRubric(rubric: RubricContent): RubricValidation {
     save.push({ path: 'sections', message: 'Use between 1 and 10 sections.' });
   if (!rubric.sections.some((s) => s.type !== 'bonus'))
     publish.push({ path: 'weights', message: 'At least one Actual section is required.' });
+  const points = isPointsRubric(rubric);
   let weightValuesOk = true;
+  let maximaComplete = true;
   rubric.sections.forEach((s, i) => {
     const path = `sections.${i}`;
     const name = sectionName(s, i);
@@ -365,7 +427,15 @@ export function validateRubric(rubric: RubricContent): RubricValidation {
       s.description,
       L.sectionDescription,
     );
-    if (s.type === 'bonus') {
+    if (points) {
+      if (s.type === 'bonus')
+        save.push({ path, message: `${name}: points rubrics have no bonus sections.` });
+      if (s.maxBonusPoints != null)
+        save.push({
+          path: `${path}.maxBonusPoints`,
+          message: 'Points rubrics have no bonus points.',
+        });
+    } else if (s.type === 'bonus') {
       if ((rubric.scoringFormat ?? 1) < 2)
         save.push({ path, message: 'Bonus sections require scoring format 2.' });
       if (s.weightPercent != null)
@@ -402,17 +472,17 @@ export function validateRubric(rubric: RubricContent): RubricValidation {
         message: `The weight of ${name} must be a whole number from 1 to 100.`,
       });
     }
+    const variable = rubric.scoringFormat === 3 || points;
     if (
-      rubric.scoringFormat === 3
+      variable
         ? s.criteria.length < 1 || s.criteria.length > 10
         : s.criteria.length !== RUBRIC_SHAPE.criteriaPerSection
     ) {
       save.push({
         path: `${path}.criteria`,
-        message:
-          rubric.scoringFormat === 3
-            ? `${name} must have 1 to 10 questions.`
-            : `${name} must have exactly ${RUBRIC_SHAPE.criteriaPerSection} criteria.`,
+        message: variable
+          ? `${name} must have 1 to 10 criteria.`
+          : `${name} must have exactly ${RUBRIC_SHAPE.criteriaPerSection} criteria.`,
       });
     }
     s.criteria.forEach((c, j) => {
@@ -435,8 +505,54 @@ export function validateRubric(rubric: RubricContent): RubricValidation {
         c.guidelines,
         L.guidelines,
       );
+      if (points) {
+        if (c.maxPoints == null) {
+          maximaComplete = false;
+          save.push({
+            path: `${cpath}.maxPoints`,
+            message: `Set the maximum points of ${cname}.`,
+          });
+        } else if (
+          typeof c.maxPoints !== 'number' ||
+          !Number.isInteger(c.maxPoints) ||
+          c.maxPoints < 1 ||
+          c.maxPoints > POINTS_LIMITS.maxPoints
+        ) {
+          maximaComplete = false;
+          save.push({
+            path: `${cpath}.maxPoints`,
+            message: `The maximum points of ${cname} must be a whole number from 1 to ${POINTS_LIMITS.maxPoints}.`,
+          });
+        }
+      } else if (c.maxPoints != null) {
+        save.push({
+          path: `${cpath}.maxPoints`,
+          message: 'Maximum points apply only to points rubrics.',
+        });
+      }
     });
+    if (points) {
+      const total = s.criteria.reduce((n, c) => n + (c.maxPoints ?? 0), 0);
+      if (total > POINTS_LIMITS.maxPoints)
+        save.push({
+          path: `${path}.criteria`,
+          message: `${name} totals ${total} points; a section can have at most ${POINTS_LIMITS.maxPoints}.`,
+        });
+    }
   });
+
+  if (points) {
+    const totalPoints = rubric.sections.reduce(
+      (sum, sec) => sum + sec.criteria.reduce((n, c) => n + (c.maxPoints ?? 0), 0),
+      0,
+    );
+    if (rubric.sections.length > 0 && maximaComplete && totalPoints !== RUBRIC_SHAPE.maxScore)
+      publish.push({
+        path: 'weights',
+        message: `The criteria total ${totalPoints} points. They must total exactly ${RUBRIC_SHAPE.maxScore}.`,
+      });
+    return { save, publish };
+  }
 
   const allSet =
     rubric.sections.length > 0 &&

@@ -44,6 +44,7 @@ export interface ApiErrorBody {
 
 export * from './password.js';
 export * from './rubric.js';
+export * from './officialRubric.js';
 export * from './auth.js';
 export * from './users.js';
 export * from './teams.js';

@@ -1,11 +1,17 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import mysql, { type Connection, type RowDataPacket } from 'mysql2/promise';
+import type { SslOptions } from 'mysql2';
 
 /** server/migrations, resolved from this file so it works from any working directory. */
-export const MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations', import.meta.url));
+export const MIGRATIONS_DIR = [
+  new URL('../../migrations', import.meta.url),
+  new URL('../../../migrations', import.meta.url),
+]
+  .map((url) => fileURLToPath(url))
+  .find((path) => existsSync(path))!;
 
 const FILE_PATTERN = /^(\d{3})_([a-z0-9_]+)\.sql$/;
 
@@ -25,11 +31,21 @@ export interface AppliedMigration {
 }
 
 export interface DbTarget {
+  ssl?: SslOptions;
   host: string;
   port: number;
   user: string;
   password: string;
   database: string;
+}
+
+/** Preserve historical SQL bytes/checksums; normalize only MariaDB's generated-column alias. */
+export function migrationSqlForServer(file: MigrationFile, serverVersion: string): string {
+  if (/mariadb/i.test(serverVersion) || file.version !== 7) return file.sql;
+  return file.sql.replace(
+    /(ADD COLUMN (?:published_slot|draft_slot) TINYINT AS \(IF\(status = '(?:published|draft)', 1, NULL\)\)) PERSISTENT/g,
+    '$1 STORED',
+  );
 }
 
 /** Reads and validates migration files in version order. */
@@ -105,6 +121,7 @@ export async function migrate(
   const files = readMigrations(dir);
   const conn = await migrationConnection(target);
   try {
+    const [[server]] = await conn.query<RowDataPacket[]>('SELECT VERSION() AS version');
     const [lockRows] = await conn.query<RowDataPacket[]>(
       "SELECT GET_LOCK('judging_migrations', 10) AS ok",
     );
@@ -137,7 +154,7 @@ export async function migrate(
         log(`Applying ${String(file.version).padStart(3, '0')}_${file.name}.sql …`);
         const started = performance.now();
         try {
-          await conn.query(file.sql);
+          await conn.query(migrationSqlForServer(file, String(server!.version)));
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           throw new Error(
@@ -168,7 +185,16 @@ export async function migrationStatus(target: DbTarget, dir = MIGRATIONS_DIR) {
   const files = readMigrations(dir);
   const conn = await migrationConnection(target);
   try {
-    const applied = await appliedMigrations(conn);
+    const [exists] = await conn.query<RowDataPacket[]>(
+      "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='schema_migrations'",
+    );
+    const applied = exists.length
+      ? (
+          await conn.query<(RowDataPacket & AppliedMigration)[]>(
+            'SELECT version,name,checksum,applied_at FROM schema_migrations ORDER BY version',
+          )
+        )[0]
+      : [];
     const done = new Map(applied.map((a) => [a.version, a]));
     return files.map((f) => ({
       version: f.version,

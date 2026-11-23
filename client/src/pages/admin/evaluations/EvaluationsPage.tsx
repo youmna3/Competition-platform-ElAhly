@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, NavLink, useSearchParams } from 'react-router';
 import {
+  COMPETITION_LABELS,
   EVALUATION_PROGRESS_LABELS,
   TEAM_COMPLETION_LABELS,
   formatScore,
@@ -85,7 +86,7 @@ function JudgeLine({ j, teamId }: { j: AdminEvaluationJudge; teamId: number }) {
         {j.status === 'submitted' && j.totalScore != null
           ? formatScore(j.totalScore)
           : j.status === 'draft'
-            ? `${j.ratedCount}/8`
+            ? `${j.ratedCount}/${j.requiredCount || '?'} rated`
             : ''}
       </span>
       {j.rubricVersionNo != null && (
@@ -107,6 +108,8 @@ function JudgeLine({ j, teamId }: { j: AdminEvaluationJudge; teamId: number }) {
 }
 
 function TeamEvaluations({ team, onBack }: { team: AdminTeamEvaluations; onBack: () => void }) {
+  const lifecycle = useCompetition();
+  const correctionsClosed = !!lifecycle.data && lifecycle.data.state !== 'judging_open';
   return (
     <section className="space-y-4" aria-label={`Evaluations for ${team.name}`}>
       <Card className="space-y-3">
@@ -128,10 +131,21 @@ function TeamEvaluations({ team, onBack }: { team: AdminTeamEvaluations; onBack:
             {team.provisionalAverage == null ? '—' : formatScore(team.provisionalAverage)}
           </strong>
         </p>
-        <p className="text-sm text-muted">
-          Review each judge separately. Edit Submission corrects that judge’s submitted ratings and
-          notes, with a reason and confirmation.
-        </p>
+        {correctionsClosed ? (
+          <Alert tone="info" title="Corrections are available only while judging is open">
+            The competition is currently{' '}
+            <strong>{COMPETITION_LABELS[lifecycle.data!.state]}</strong>, so Edit Submission is
+            hidden.{' '}
+            <Link to="/admin/settings" className="font-semibold text-ischool-blue-dark underline">
+              Go to Settings
+            </Link>
+          </Alert>
+        ) : (
+          <p className="text-sm text-muted">
+            Review each judge separately. Edit Submission corrects that judge’s submitted ratings
+            and notes, with a reason and confirmation.
+          </p>
+        )}
       </Card>
       {team.judges.length ? (
         <ul className="grid gap-4 xl:grid-cols-3">

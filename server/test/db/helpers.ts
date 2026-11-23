@@ -9,6 +9,7 @@ import { loadToolConfig } from '../../src/config.js';
 import { assertTestDatabase, testDatabaseNames } from '../databaseSafety.js';
 import { restoreDatabase } from '../../src/db/backup.js';
 import { migrate, type DbTarget } from '../../src/db/migrate.js';
+import { databaseSsl } from '../../src/db/tls.js';
 
 export const config = loadToolConfig();
 const names = testDatabaseNames(config.db.database);
@@ -25,6 +26,7 @@ export const adminServer = {
   port: config.db.port,
   user: config.dbAdmin.user,
   password: config.dbAdmin.password,
+  ssl: databaseSsl(config.db),
 };
 
 export const testTarget: DbTarget = { ...adminServer, database: TEST_DB };

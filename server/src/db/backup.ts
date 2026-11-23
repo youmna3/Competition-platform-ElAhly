@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import {
   closeSync,
@@ -17,9 +17,13 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { Transform } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 import mysql, { type RowDataPacket } from 'mysql2/promise';
+import type { SslOptions } from 'mysql2';
 
 export interface MysqlServer {
+  ssl?: SslOptions;
   host: string;
   port: number;
   user: string;
@@ -50,22 +54,48 @@ export function resolveMysqlBinary(tool: 'mysqldump' | 'mysql', binDir?: string)
  * Credentials go in a short-lived option file instead of the command line, so
  * the password never appears in the process list.
  */
-function withOptionFile<T>(server: MysqlServer, run: (file: string) => Promise<T>): Promise<T> {
+function withOptionFile<T>(
+  server: MysqlServer,
+  run: (file: string) => Promise<T>,
+  binary: string,
+): Promise<T> {
   const file = join(tmpdir(), `judging-mysql-${randomBytes(8).toString('hex')}.cnf`);
   const quote = (v: string) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  const caFile = `${file}.ca.pem`;
+  let tls = '';
+  if (server.ssl) {
+    if (typeof server.ssl.ca !== 'string')
+      throw new Error('Database tools require a CA certificate for verified TLS');
+    const version = execFileSync(binary, ['--no-defaults', '--version'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    tls = /mariadb/i.test(version)
+      ? 'ssl=1\nssl-verify-server-cert=1\n'
+      : 'ssl-mode=VERIFY_IDENTITY\n';
+    tls += `ssl-ca=${quote(caFile)}\n`;
+    writeFileSync(caFile, server.ssl.ca, { mode: 0o600 });
+  }
   writeFileSync(
     file,
     `[client]\nuser=${quote(server.user)}\npassword=${quote(server.password)}\n` +
-      `host=${quote(server.host)}\nport=${server.port}\n`,
+      `host=${quote(server.host)}\nport=${server.port}\n${tls}`,
     { mode: 0o600 },
   );
-  return run(file).finally(() => rmSync(file, { force: true }));
+  return run(file).finally(() => {
+    rmSync(file, { force: true });
+    rmSync(caFile, { force: true });
+  });
 }
 
 function runTool(
   binary: string,
   args: string[],
-  { stdinFile, stdoutFile }: { stdinFile?: string; stdoutFile?: string },
+  {
+    stdinFile,
+    stdoutFile,
+    normalizeMysqlDump = false,
+  }: { stdinFile?: string; stdoutFile?: string; normalizeMysqlDump?: boolean },
 ): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(binary, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -84,7 +114,13 @@ function runTool(
     });
     const done = Promise.all([
       stdoutFile
-        ? pipeline(child.stdout, createWriteStream(stdoutFile))
+        ? normalizeMysqlDump
+          ? pipeline(
+              child.stdout,
+              mysqlDumpNormalizer(),
+              createWriteStream(stdoutFile, { mode: 0o600 }),
+            )
+          : pipeline(child.stdout, createWriteStream(stdoutFile, { mode: 0o600 }))
         : Promise.resolve(child.stdout.resume()),
       stdinFile
         ? pipeline(createReadStream(stdinFile), child.stdin)
@@ -103,6 +139,35 @@ function runTool(
         })
         .catch(reject);
     });
+  });
+}
+
+/** MySQL bug 77856: a trailing semicolon inside a version-wrapped simple trigger breaks reimport. */
+export function normalizeMysqlDumpLine(line: string) {
+  if (
+    /^\/\*!\d+ CREATE\*\/ .*\/\*!\d+ TRIGGER .* FOR EACH ROW SIGNAL SQLSTATE '[^']+' SET MESSAGE_TEXT = '(?:''|\\.|[^'\\])*';\s+\*\/;;\r?$/.test(
+      line,
+    )
+  )
+    return line.replace(/;(\s+\*\/;;\r?)$/, '$1');
+  return line;
+}
+function mysqlDumpNormalizer() {
+  const decoder = new StringDecoder('utf8');
+  let pending = '';
+  return new Transform({
+    transform(chunk, _encoding, done) {
+      pending += decoder.write(chunk);
+      const lines = pending.split('\n');
+      pending = lines.pop()!;
+      this.push(lines.map(normalizeMysqlDumpLine).join('\n') + (lines.length ? '\n' : ''));
+      done();
+    },
+    flush(done) {
+      pending += decoder.end();
+      this.push(normalizeMysqlDumpLine(pending));
+      done();
+    },
   });
 }
 
@@ -141,29 +206,35 @@ export async function backupDatabase(
   { dir, binDir, label = 'backup' }: { dir: string; binDir?: string; label?: string },
 ): Promise<BackupResult> {
   assertSafeDbName(database);
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(
     dir,
     `${database}_${label}_${timestamp()}_${randomBytes(2).toString('hex')}.sql`,
   );
   const binary = resolveMysqlBinary('mysqldump', binDir);
+  const mysqlDump = !/mariadb/i.test(
+    execFileSync(binary, ['--no-defaults', '--version'], { encoding: 'utf8', windowsHide: true }),
+  );
 
-  await withOptionFile(server, (optionFile) =>
-    runTool(
-      binary,
-      [
-        `--defaults-extra-file=${optionFile}`, // must be the first option
-        '--single-transaction',
-        '--routines',
-        '--triggers',
-        '--hex-blob',
-        '--no-tablespaces',
-        '--default-character-set=utf8mb4',
-        '--add-drop-table',
-        database,
-      ],
-      { stdoutFile: file },
-    ),
+  await withOptionFile(
+    server,
+    (optionFile) =>
+      runTool(
+        binary,
+        [
+          `--defaults-extra-file=${optionFile}`, // must be the first option
+          '--single-transaction',
+          '--routines',
+          '--triggers',
+          '--hex-blob',
+          '--no-tablespaces',
+          '--default-character-set=utf8mb4',
+          '--add-drop-table',
+          database,
+        ],
+        { stdoutFile: file, normalizeMysqlDump: mysqlDump },
+      ),
+    binary,
   ).catch((error: unknown) => {
     rmSync(file, { force: true });
     throw error;
@@ -172,7 +243,7 @@ export async function backupDatabase(
   verifyDumpComplete(file);
   const sha256 = await sha256File(file);
   const checksumFile = `${file}.sha256`;
-  writeFileSync(checksumFile, `${sha256}  ${basename(file)}\n`);
+  writeFileSync(checksumFile, `${sha256}  ${basename(file)}\n`, { mode: 0o600 });
   return { file, checksumFile, sha256, bytes: statSync(file).size };
 }
 
@@ -243,14 +314,17 @@ export async function restoreDatabase(
   }
 
   const binary = resolveMysqlBinary('mysql', binDir);
-  await withOptionFile(server, (optionFile) =>
-    runTool(
-      binary,
-      [`--defaults-extra-file=${optionFile}`, '--default-character-set=utf8mb4', database],
-      {
-        stdinFile: file,
-      },
-    ),
+  await withOptionFile(
+    server,
+    (optionFile) =>
+      runTool(
+        binary,
+        [`--defaults-extra-file=${optionFile}`, '--default-character-set=utf8mb4', database],
+        {
+          stdinFile: file,
+        },
+      ),
+    binary,
   );
 }
 
@@ -267,6 +341,7 @@ export interface DatabaseFingerprint {
   tables: Record<string, { rows: number; checksum: string }>;
   triggers: string[];
   views: string[];
+  routines?: string[];
 }
 
 /** Row counts and CHECKSUM TABLE values for every table, plus trigger and view names. */
@@ -303,6 +378,11 @@ export async function fingerprintDatabase(
       [database],
     );
     result.views = views.map((v) => String(v.name));
+    const [routines] = await conn.query<RowDataPacket[]>(
+      'SELECT ROUTINE_NAME AS name,ROUTINE_TYPE AS type FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=? ORDER BY ROUTINE_NAME,ROUTINE_TYPE',
+      [database],
+    );
+    result.routines = routines.map((r) => `${r.type}:${r.name}`);
     return result;
   } finally {
     await conn.end();
@@ -327,5 +407,7 @@ export function compareFingerprints(
   }
   if (live.triggers.join() !== restored.triggers.join()) problems.push('triggers differ');
   if (live.views.join() !== restored.views.join()) problems.push('views differ');
+  if ((live.routines ?? []).join() !== (restored.routines ?? []).join())
+    problems.push('stored routines differ');
   return problems;
 }

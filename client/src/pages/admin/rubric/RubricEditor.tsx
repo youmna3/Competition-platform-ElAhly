@@ -134,6 +134,47 @@ function WeightControl({
   );
 }
 
+/** Whole-number maximum points for one criterion (points rubrics). */
+function MaxPointsField({
+  label,
+  path,
+  value,
+  error,
+  onChange,
+}: {
+  label: string;
+  path: string;
+  value: string;
+  error?: string;
+  onChange: (value: string) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="space-y-1">
+      <label htmlFor={id} className="block text-xs font-semibold text-muted">
+        Maximum points
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id={id}
+          data-path={path}
+          aria-label={label}
+          type="text"
+          inputMode="numeric"
+          maxLength={3}
+          value={value}
+          placeholder="—"
+          aria-invalid={error ? true : undefined}
+          onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ''))}
+          className="w-20 rounded-xl border border-black/15 px-3 py-2 text-right text-lg font-bold shadow-sm outline-none focus:border-ischool-blue focus:ring-4 focus:ring-ischool-blue/15 aria-[invalid=true]:border-ahly-red"
+        />
+        <span className="text-sm font-semibold text-muted">pts</span>
+      </div>
+      {error && <p className="max-w-56 text-xs font-medium text-ahly-red-dark">{error}</p>}
+    </div>
+  );
+}
+
 export function RubricEditor({
   value,
   onChange,
@@ -162,6 +203,19 @@ export function RubricEditor({
     })),
   );
   const totalOk = total === 100;
+  const points = value.scoringFormat === 4;
+  // Structural edits move star drafts to the variable star format; points drafts stay points.
+  const editableFormat = points ? 4 : 3;
+  const sectionTotal = (sec: EditSection) =>
+    sec.criteria.reduce((n, c) => n + (Number(c.maxPoints) || 0), 0);
+  const pointsTotal = value.sections.reduce((n, sec) => n + sectionTotal(sec), 0);
+  const blankCriterion = (title: string): EditCriterion => ({
+    key: newKey(),
+    title,
+    description: '',
+    guidelines: '',
+    maxPoints: points ? '5' : '',
+  });
 
   return (
     <div className="space-y-6">
@@ -169,6 +223,40 @@ export function RubricEditor({
         <div>
           <h2 className="text-lg font-semibold">1. Rubric details</h2>
           <p className="text-sm text-muted">Judges see these at the top of the rubric.</p>
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor="scoring-method" className="block text-sm font-medium text-ink">
+            Scoring method
+          </label>
+          <select
+            id="scoring-method"
+            className={inputClass}
+            value={points ? 'points' : 'stars'}
+            onChange={(e) => {
+              const toPoints = e.target.value === 'points';
+              onChange({
+                ...value,
+                scoringFormat: toPoints ? 4 : 3,
+                sections: value.sections.map((sec) => ({
+                  ...sec,
+                  type: toPoints ? 'actual' : sec.type,
+                  maxBonusPoints: toPoints ? '' : sec.maxBonusPoints,
+                  criteria: sec.criteria.map((c) => ({
+                    ...c,
+                    maxPoints: toPoints ? c.maxPoints || '' : '',
+                  })),
+                })),
+              });
+            }}
+          >
+            <option value="points">Numeric points (0 to each criterion’s maximum)</option>
+            <option value="stars">Stars (1 to 5, weighted sections)</option>
+          </select>
+          <p className="text-xs text-muted">
+            {points
+              ? 'Judges type whole points for each criterion. Section scores are the sum of their criteria; all criteria must total 100.'
+              : 'Judges rate each criterion with 1 to 5 stars; section weights must total 100%.'}
+          </p>
         </div>
         <Field
           label="Rubric title"
@@ -202,52 +290,98 @@ export function RubricEditor({
         />
       </Card>
 
-      <Card className="space-y-5">
-        <div>
-          <h2 className="text-lg font-semibold">2. Section weights</h2>
-          <p className="text-sm text-muted">
-            How much each section counts toward the final score out of 100. All questions in a
-            section count equally.
-          </p>
-        </div>
-        <div className="grid gap-5 sm:grid-cols-2">
-          {value.sections.map((s, i) =>
-            s.type === 'bonus' ? null : (
-              <WeightControl
-                key={s.key}
-                section={s}
-                index={i}
-                onChange={(weightPercent) => setSection(i, { weightPercent })}
-                error={errors.get(`sections.${i}.weightPercent`)}
-              />
-            ),
-          )}
-        </div>
-        <div
-          data-path="weights"
-          tabIndex={-1}
-          className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 ${totalOk ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-ahly-red-dark'}`}
-          role="status"
-          aria-live="polite"
-        >
-          <span className="font-semibold">Total weight</span>
-          <span className="text-lg font-bold tabular-nums">{total}% / 100%</span>
-          {!totalOk && (
-            <span className="w-full text-xs">
-              The section percentages must total 100% before publishing (
-              {total < 100 ? `${100 - total}% left to assign` : `${total - 100}% too much`}).
-            </span>
-          )}
-        </div>
-      </Card>
+      {points ? (
+        <Card className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold">2. Points per section</h2>
+            <p className="text-sm text-muted">
+              Calculated from each criterion’s maximum points. The criteria must total exactly 100.
+            </p>
+          </div>
+          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {value.sections.map((sec, i) => (
+              <li key={sec.key} className="rounded-xl border border-line bg-white p-4">
+                <p className="text-xs font-bold text-ischool-blue-dark">
+                  Section {String.fromCharCode(65 + i)}
+                </p>
+                <p className="truncate font-semibold">{sec.title || 'Untitled section'}</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums">
+                  {sectionTotal(sec)} <span className="text-sm font-semibold text-muted">pts</span>
+                </p>
+                <p className="text-xs text-muted">
+                  {sec.criteria.length} criteri{sec.criteria.length === 1 ? 'on' : 'a'}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <div
+            data-path="weights"
+            tabIndex={-1}
+            className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 ${pointsTotal === 100 ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-ahly-red-dark'}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="font-semibold">Total points</span>
+            <span className="text-lg font-bold tabular-nums">{pointsTotal} / 100</span>
+            {pointsTotal !== 100 && (
+              <span className="w-full text-xs">
+                The criteria must total exactly 100 points before publishing (
+                {pointsTotal < 100
+                  ? `${100 - pointsTotal} left to assign`
+                  : `${pointsTotal - 100} too many`}
+                ).
+              </span>
+            )}
+          </div>
+        </Card>
+      ) : (
+        <Card className="space-y-5">
+          <div>
+            <h2 className="text-lg font-semibold">2. Section weights</h2>
+            <p className="text-sm text-muted">
+              How much each section counts toward the final score out of 100. All questions in a
+              section count equally.
+            </p>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
+            {value.sections.map((s, i) =>
+              s.type === 'bonus' ? null : (
+                <WeightControl
+                  key={s.key}
+                  section={s}
+                  index={i}
+                  onChange={(weightPercent) => setSection(i, { weightPercent })}
+                  error={errors.get(`sections.${i}.weightPercent`)}
+                />
+              ),
+            )}
+          </div>
+          <div
+            data-path="weights"
+            tabIndex={-1}
+            className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 ${totalOk ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-ahly-red-dark'}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="font-semibold">Total weight</span>
+            <span className="text-lg font-bold tabular-nums">{total}% / 100%</span>
+            {!totalOk && (
+              <span className="w-full text-xs">
+                The section percentages must total 100% before publishing (
+                {total < 100 ? `${100 - total}% left to assign` : `${total - 100}% too much`}).
+              </span>
+            )}
+          </div>
+        </Card>
+      )}
 
       <div className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">3. Sections and criteria</h2>
           <p className="text-sm text-muted">
-            Each section supports 1 to 10 equally weighted questions rated 1 to 5 stars. Actual
-            weights total 100%. Optional Bonus sections add points above 100; leave both stars blank
-            for zero bonus.
+            {points
+              ? 'Each section supports 1 to 10 criteria. Give every criterion a maximum from 1 to 100 points; judges award 0 up to that maximum.'
+              : 'Each section supports 1 to 10 equally weighted questions rated 1 to 5 stars. Actual weights total 100%. Optional Bonus sections add points above 100; leave both stars blank for zero bonus.'}
           </p>
         </div>
         {(value.scoringFormat ?? 1) >= 2 && (
@@ -264,12 +398,7 @@ export function RubricEditor({
                     type: 'actual',
                     weightPercent: '',
                     maxBonusPoints: '',
-                    criteria: [1, 2].map((n) => ({
-                      key: newKey(),
-                      title: `Criterion ${n}`,
-                      description: '',
-                      guidelines: '',
-                    })),
+                    criteria: (points ? [1] : [1, 2]).map((n) => blankCriterion(`Criterion ${n}`)),
                   },
                 ],
               })
@@ -290,29 +419,33 @@ export function RubricEditor({
                 {s.title.trim() && <span className="font-normal text-black/60"> · {s.title}</span>}
               </p>
               <span className="rounded-full bg-ischool-blue-soft px-3 py-0.5 text-sm font-semibold text-ischool-blue-dark">
-                {s.type === 'bonus'
-                  ? `Bonus: +${s.maxBonusPoints || '?'} maximum`
-                  : s.weightPercent
-                    ? `${s.weightPercent}% of the base score`
-                    : 'Weight not set'}
+                {points
+                  ? `${sectionTotal(s)} points`
+                  : s.type === 'bonus'
+                    ? `Bonus: +${s.maxBonusPoints || '?'} maximum`
+                    : s.weightPercent
+                      ? `${s.weightPercent}% of the base score`
+                      : 'Weight not set'}
               </span>
             </div>
             <div className="space-y-4 px-5 sm:px-6">
               {(value.scoringFormat ?? 1) >= 2 && (
                 <div className="flex flex-wrap items-end gap-4">
-                  <label className="text-sm font-semibold">
-                    Section type
-                    <select
-                      className={inputClass}
-                      value={s.type}
-                      onChange={(e) =>
-                        setSection(i, { type: e.target.value as 'actual' | 'bonus' })
-                      }
-                    >
-                      <option value="actual">Actual</option>
-                      <option value="bonus">Bonus</option>
-                    </select>
-                  </label>
+                  {!points && (
+                    <label className="text-sm font-semibold">
+                      Section type
+                      <select
+                        className={inputClass}
+                        value={s.type}
+                        onChange={(e) =>
+                          setSection(i, { type: e.target.value as 'actual' | 'bonus' })
+                        }
+                      >
+                        <option value="actual">Actual</option>
+                        <option value="bonus">Bonus</option>
+                      </select>
+                    </label>
+                  )}
                   {s.type === 'bonus' && (
                     <label className="text-sm font-semibold">
                       Maximum bonus points
@@ -358,9 +491,20 @@ export function RubricEditor({
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-6">
               <p className="text-sm text-muted">
-                {s.criteria.length} question{s.criteria.length === 1 ? '' : 's'} · Maximum{' '}
-                {formatScore(sectionMaximum(content.sections[i]!) / Math.max(1, s.criteria.length))}{' '}
-                points per question
+                {points ? (
+                  <>
+                    {s.criteria.length} criteri{s.criteria.length === 1 ? 'on' : 'a'} ·{' '}
+                    {sectionTotal(s)} points in total
+                  </>
+                ) : (
+                  <>
+                    {s.criteria.length} question{s.criteria.length === 1 ? '' : 's'} · Maximum{' '}
+                    {formatScore(
+                      sectionMaximum(content.sections[i]!) / Math.max(1, s.criteria.length),
+                    )}{' '}
+                    points per question
+                  </>
+                )}
               </p>
               <Button
                 variant="secondary"
@@ -368,7 +512,7 @@ export function RubricEditor({
                 onClick={() =>
                   onChange({
                     ...value,
-                    scoringFormat: 3,
+                    scoringFormat: editableFormat,
                     sections: value.sections.map((section, k) =>
                       k !== i
                         ? section
@@ -376,19 +520,16 @@ export function RubricEditor({
                             ...section,
                             criteria: [
                               ...section.criteria,
-                              {
-                                key: newKey(),
-                                title: `Question ${section.criteria.length + 1}`,
-                                description: '',
-                                guidelines: '',
-                              },
+                              blankCriterion(
+                                `${points ? 'Criterion' : 'Question'} ${section.criteria.length + 1}`,
+                              ),
                             ],
                           },
                     ),
                   })
                 }
               >
-                Add Question
+                {points ? 'Add criterion' : 'Add Question'}
               </Button>
             </div>
             <div className="grid gap-4 px-5 pb-5 sm:px-6 lg:grid-cols-2">
@@ -396,17 +537,34 @@ export function RubricEditor({
                 const cp = `sections.${i}.criteria.${j}`;
                 return (
                   <div key={c.key} className="space-y-3 rounded-xl border border-black/10 p-4">
-                    <p className="text-xs font-semibold text-ischool-blue-dark">
-                      Maximum contribution:{' '}
-                      {formatScore(sectionMaximum(content.sections[i]!) / s.criteria.length)} points
-                      (equal share)
-                    </p>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">
-                        Criterion {i + 1}.{j + 1}
-                      </p>
-                      <StarRating label={`Criterion ${i + 1}.${j + 1}`} size={18} />
-                    </div>
+                    {points ? (
+                      <div className="flex flex-wrap items-end justify-between gap-3">
+                        <p className="text-sm font-semibold">
+                          Criterion {String.fromCharCode(65 + i)}.{j + 1}
+                        </p>
+                        <MaxPointsField
+                          path={`${cp}.maxPoints`}
+                          label={`Maximum points for criterion ${String.fromCharCode(65 + i)}.${j + 1}`}
+                          value={c.maxPoints}
+                          error={errors.get(`${cp}.maxPoints`)}
+                          onChange={(maxPoints) => setCriterion(i, j, { maxPoints })}
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs font-semibold text-ischool-blue-dark">
+                          Maximum contribution:{' '}
+                          {formatScore(sectionMaximum(content.sections[i]!) / s.criteria.length)}{' '}
+                          points (equal share)
+                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-semibold">
+                            Criterion {i + 1}.{j + 1}
+                          </p>
+                          <StarRating label={`Criterion ${i + 1}.${j + 1}`} size={18} />
+                        </div>
+                      </>
+                    )}
                     <div className="flex flex-wrap gap-2">
                       <Button
                         variant="ghost"
@@ -417,7 +575,7 @@ export function RubricEditor({
                           [criteria[j - 1], criteria[j]] = [criteria[j]!, criteria[j - 1]!];
                           onChange({
                             ...value,
-                            scoringFormat: 3,
+                            scoringFormat: editableFormat,
                             sections: value.sections.map((section, k) =>
                               k === i ? { ...section, criteria } : section,
                             ),
@@ -435,7 +593,7 @@ export function RubricEditor({
                           [criteria[j], criteria[j + 1]] = [criteria[j + 1]!, criteria[j]!];
                           onChange({
                             ...value,
-                            scoringFormat: 3,
+                            scoringFormat: editableFormat,
                             sections: value.sections.map((section, k) =>
                               k === i ? { ...section, criteria } : section,
                             ),
@@ -451,7 +609,7 @@ export function RubricEditor({
                         onClick={() =>
                           onChange({
                             ...value,
-                            scoringFormat: 3,
+                            scoringFormat: editableFormat,
                             sections: value.sections.map((section, k) =>
                               k === i
                                 ? {
@@ -487,7 +645,11 @@ export function RubricEditor({
                     />
                     <Field
                       label="Judging guidelines (optional)"
-                      hint="What 1 to 5 stars look like for this criterion."
+                      hint={
+                        points
+                          ? 'What low, middle and full points look like for this criterion.'
+                          : 'What 1 to 5 stars look like for this criterion.'
+                      }
                       path={`${cp}.guidelines`}
                       value={c.guidelines}
                       multiline

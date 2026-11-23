@@ -76,7 +76,7 @@ function summarise(team: RowDataPacket, judges: AdminEvaluationJudge[]): AdminTe
     pending: judges.length - submitted.length,
     completion,
     provisionalAverage: submitted.length
-      ? (submitted.some((j) => j.scoringFormat === 3) ? (n: number) => n : round3)(
+      ? (submitted.some((j) => (j.scoringFormat ?? 1) >= 3) ? (n: number) => n : round3)(
           submitted.reduce((sum, j) => sum + (j.totalScore ?? 0), 0) / submitted.length,
         )
       : null,
@@ -107,7 +107,7 @@ export async function listTeamEvaluations(
   );
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT tj.team_id, u.id, u.full_name, u.email, u.role, u.status AS account_status,
-            e.id AS evaluation_id, e.status, e.required_scored, e.total_score, e.submitted_at, e.updated_at,
+            e.id AS evaluation_id, e.status, e.required_scored, e.required_count, e.total_score, e.submitted_at, e.updated_at,
             e.reopened_count, v.version_no, v.scoring_format
      FROM team_judges tj
      JOIN users u ON u.id = tj.judge_id
@@ -119,7 +119,7 @@ export async function listTeamEvaluations(
   for (const r of rows) {
     const list = byTeam.get(Number(r.team_id)) ?? [];
     list.push({
-      ...(Number(r.scoring_format) === 3 ? { scoringFormat: 3 } : {}),
+      ...(Number(r.scoring_format) >= 3 ? { scoringFormat: Number(r.scoring_format) } : {}),
       judgeId: Number(r.id),
       fullName: String(r.full_name),
       email: String(r.email),
@@ -128,6 +128,7 @@ export async function listTeamEvaluations(
       evaluationId: r.evaluation_id == null ? null : Number(r.evaluation_id),
       status: (r.status ?? 'not_started') as EvaluationProgress,
       ratedCount: Number(r.required_scored ?? 0),
+      requiredCount: Number(r.required_count ?? 0),
       totalScore: r.status === 'submitted' ? Number(r.total_score) : null,
       rubricVersionNo: r.version_no == null ? null : Number(r.version_no),
       submittedAt: iso(r.submitted_at),

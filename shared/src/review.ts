@@ -29,6 +29,8 @@ export interface AdminEvaluationJudge {
   evaluationId: number | null;
   status: EvaluationProgress;
   ratedCount: number;
+  /** Required criteria of the evaluation's rubric version (0 before it is started). */
+  requiredCount?: number;
   /** Score of a submitted evaluation; null otherwise. */
   totalScore: number | null;
   rubricVersionNo: number | null;
@@ -125,6 +127,8 @@ export interface SubmissionSnapshot {
     sectionId: number;
     title: string;
     rating: number | null;
+    /** Points rubrics only: the criterion's maximum points. */
+    maxPoints?: number;
     note: string;
   }[];
   overallNotes: string;

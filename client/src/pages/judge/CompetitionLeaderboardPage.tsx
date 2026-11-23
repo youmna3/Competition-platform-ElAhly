@@ -1,4 +1,5 @@
 import { TopTeams } from '../../components/TopTeams';
+import { RankChip, ResultsHero } from '../../components/Results';
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
@@ -71,35 +72,23 @@ export function CompetitionLeaderboardPage() {
   const tied = (rank: number) => teams.filter((t) => t.rank === rank).length > 1;
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="eyebrow">Competition results · read-only</p>
-          <h1 className="mt-1 text-2xl font-bold sm:text-3xl">Leaderboard</h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted">
-            Official rankings for signed-in administrators and judges. A team is ranked after every
-            assigned judge submits on a compatible rubric. Equal scores share a rank.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {data && (
-            <span className="text-xs text-muted" aria-live="polite">
-              Updated {formatTime(data.computedAt)}
-            </span>
-          )}
-          <Button
-            variant="secondary"
-            disabled={results.isFetching}
-            onClick={() => void results.refetch()}
+      <ResultsHero
+        eyebrow="Competition results · read-only"
+        title="Leaderboard"
+        description="Official rankings for signed-in administrators and judges. A team is ranked after every assigned judge submits on a compatible rubric. Equal scores share a rank."
+        updatedAt={data ? formatTime(data.computedAt) : null}
+        refreshing={results.isFetching}
+        onRefresh={() => void results.refetch()}
+      >
+        {user?.role === 'admin' && (
+          <Link
+            to="/admin/leaderboard"
+            className="inline-flex min-h-11 items-center rounded-xl bg-white/15 px-4 text-sm font-semibold text-white ring-1 ring-white/30 ring-inset hover:bg-white/25"
           >
-            {results.isFetching ? 'Refreshing…' : 'Refresh'}
-          </Button>
-          {user?.role === 'admin' && (
-            <Link to="/admin/leaderboard" className="secondary-link">
-              Detailed results
-            </Link>
-          )}
-        </div>
-      </div>
+            Open detailed results →
+          </Link>
+        )}
+      </ResultsHero>
       <Card className="grid items-end gap-4 !p-4 sm:grid-cols-[minmax(0,1fr)_220px]">
         <div className="space-y-1.5">
           <label htmlFor="leaderboard-search" className="block text-sm font-medium">
@@ -216,10 +205,7 @@ export function CompetitionLeaderboardPage() {
                                 className={t.rank <= 3 ? 'bg-ischool-blue-soft/50' : ''}
                               >
                                 <td className="px-5 py-5">
-                                  <span className="mr-2 text-xl font-bold text-ischool-blue-dark tabular-nums">
-                                    {t.rank}
-                                  </span>
-                                  {tied(t.rank) && <Badge tone="blue">Tied</Badge>}
+                                  <RankChip rank={t.rank} tied={tied(t.rank)} />
                                 </td>
                                 <td className="px-5 py-5 font-mono text-xs text-muted">
                                   {t.teamCode}
@@ -227,11 +213,18 @@ export function CompetitionLeaderboardPage() {
                                 <td className="px-5 py-5 font-semibold">{t.name}</td>
                                 <td className="px-5 py-5 text-muted">{t.projectName}</td>
                                 <td className="px-5 py-5 text-xl font-bold tabular-nums">
-                                  {formatScore(t.score)} / {t.maximumScore ?? 100}
-                                  <span className="block text-xs font-normal text-muted">
-                                    Base {formatScore(t.baseAverage ?? t.score)} · Bonus +{' '}
-                                    {formatScore(t.bonusAverage ?? 0)}
+                                  <span className="text-ischool-blue-dark">
+                                    {formatScore(t.score)}
+                                  </span>{' '}
+                                  <span className="text-sm font-medium text-muted">
+                                    / {t.maximumScore ?? 100}
                                   </span>
+                                  {(t.bonusAverage ?? 0) > 0 && (
+                                    <span className="block text-xs font-normal text-muted">
+                                      Base {formatScore(t.baseAverage ?? t.score)} · Bonus +{' '}
+                                      {formatScore(t.bonusAverage ?? 0)}
+                                    </span>
+                                  )}
                                 </td>
                               </tr>
                             ))}
@@ -243,20 +236,22 @@ export function CompetitionLeaderboardPage() {
                           <li key={t.teamId}>
                             <Card className="space-y-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
-                                <Badge tone="blue">
-                                  Rank {t.rank}
-                                  {tied(t.rank) ? ' · tied' : ''}
-                                </Badge>
+                                <RankChip rank={t.rank} tied={tied(t.rank)} />
                                 <span className="text-xs text-muted">{t.teamCode}</span>
                               </div>
                               <h3 className="break-words text-lg font-bold">{t.name}</h3>
                               <p className="break-words text-sm text-muted">{t.projectName}</p>
                               <p className="border-t border-line pt-3 text-2xl font-bold text-ischool-blue-dark tabular-nums">
-                                {formatScore(t.score)} / {t.maximumScore ?? 100}
-                                <span className="block text-xs font-normal text-muted">
-                                  Base {formatScore(t.baseAverage ?? t.score)} · Bonus +{' '}
-                                  {formatScore(t.bonusAverage ?? 0)}
-                                </span>{' '}
+                                {formatScore(t.score)}{' '}
+                                <span className="text-sm font-medium text-muted">
+                                  / {t.maximumScore ?? 100}
+                                </span>
+                                {(t.bonusAverage ?? 0) > 0 && (
+                                  <span className="block text-xs font-normal text-muted">
+                                    Base {formatScore(t.baseAverage ?? t.score)} · Bonus +{' '}
+                                    {formatScore(t.bonusAverage ?? 0)}
+                                  </span>
+                                )}
                               </p>
                             </Card>
                           </li>

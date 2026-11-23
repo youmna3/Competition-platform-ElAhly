@@ -75,7 +75,9 @@ export function judgeRouter(pool: Pool): Router {
         `SELECT t.id, t.team_code, t.name, t.project_name, tj.assigned_at, e.status AS evaluation_status,
                 e.required_scored, e.required_count, e.total_score, e.submitted_at, v.version_no,
                 e.reopen_notice_pending, e.reopen_reason,
-                (e.rubric_version_id <> r.published_version_id) AS outdated
+                (e.rubric_version_id <> r.published_version_id) AS outdated,
+                (SELECT COUNT(*) FROM rubric_criteria c
+                  WHERE c.rubric_version_id = r.published_version_id AND c.is_required) AS published_required
          FROM team_judges tj
          JOIN teams t ON t.id = tj.team_id AND t.status = 'active'
          JOIN rubric r ON r.id = 1
@@ -95,7 +97,8 @@ export function judgeRouter(pool: Pool): Router {
           ? (r.evaluation_status as 'draft' | 'submitted')
           : 'not_started',
         ratedCount: Number(r.required_scored ?? 0),
-        requiredCount: Number(r.required_count ?? 0),
+        // Before a judge starts, show how many criteria the published rubric asks for (not 0/0).
+        requiredCount: Number(r.required_count ?? r.published_required ?? 0),
         totalScore: r.evaluation_status === 'submitted' ? Number(r.total_score) : null,
         submittedAt: r.submitted_at ? new Date(r.submitted_at).toISOString() : null,
         rubricVersionNo: r.version_no == null ? null : Number(r.version_no),

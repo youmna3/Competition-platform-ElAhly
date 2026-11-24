@@ -60,6 +60,26 @@ describe('users', () => {
 });
 
 describe('teams', () => {
+  it('accepts legacy teams and two or three students while rejecting incomplete member rows', async () => {
+    const id = await createTeam(conn, 'STUDENT-CHECK');
+    await expectRefused(
+      conn.query('UPDATE teams SET student_name_1=? WHERE id=?', ['Only student', id]),
+      /chk_team_students|CONSTRAINT/i,
+    );
+    await conn.query(
+      'UPDATE teams SET student_name_1=?,student_name_2=?,student_name_3=? WHERE id=?',
+      ['First student', 'Second student', 'Third student', id],
+    );
+    await expectRefused(
+      conn.query("UPDATE teams SET presentation_link='javascript:alert(1)' WHERE id=?", [id]),
+      /chk_team_presentation_link|CONSTRAINT/i,
+    );
+    await conn.query('UPDATE teams SET student_name_3=NULL,presentation_link=? WHERE id=?', [
+      'https://example.com/slides',
+      id,
+    ]);
+    expect(await scalar(conn, 'SELECT student_name_3 FROM teams WHERE id=?', [id])).toBe(null);
+  });
   it('keeps Team IDs unique across the competition, ignoring case', async () => {
     await createTeam(conn, 'AHL-001');
     await expectRefused(createTeam(conn, 'ahl-001'), /ER_DUP_ENTRY/);

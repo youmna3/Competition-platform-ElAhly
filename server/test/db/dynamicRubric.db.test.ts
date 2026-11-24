@@ -325,7 +325,7 @@ it('preserves large before/after snapshots and permits historical bonus correcti
   const archivedRows = progress.sheets.find((s) => s.name === 'Archived Team Progress')!.rows;
   expect(archivedRows).toHaveLength(2);
   expect(
-    archivedRows.every((r) => JSON.stringify(r.slice(9)) === JSON.stringify([2, 2, 0, 100])),
+    archivedRows.every((r) => JSON.stringify(r.slice(9, 13)) === JSON.stringify([2, 2, 0, 100])),
   ).toBe(true);
 });
 

@@ -98,11 +98,8 @@ export async function productionFiles(kind) {
   for (const path of required)
     if (!paths.has(path)) throw new Error('Missing required production file: ' + path);
   const migrations = [...paths].filter((p) => p.startsWith('server/migrations/')).sort();
-  if (
-    migrations.length !== 15 ||
-    !migrations.some((p) => p.endsWith('015_reset_preserved_accounts.sql'))
-  )
-    throw new Error('All 15 migrations are required');
+  if (migrations.length !== 16 || !migrations.some((p) => p.endsWith('016_team_resources.sql')))
+    throw new Error('All 16 migrations are required');
   const secrets = await localSecrets();
   return Promise.all(
     [...paths].sort().map(async (path) => {

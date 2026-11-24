@@ -1,3 +1,5 @@
+import { teamResources, resourceColumns, resourceValues } from './resources.js';
+import type { ValidTeamInput } from './validation.js';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import {
   TEAM_ERRORS,
@@ -12,7 +14,7 @@ import { inTransaction, type Actor } from './service.js';
 import { teamInputSchema } from './validation.js';
 
 interface PlannedRow extends ImportRowResult {
-  clean?: { teamCode: string; name: string; projectName: string };
+  clean?: ValidTeamInput;
   existingId?: number;
 }
 
@@ -29,6 +31,9 @@ async function buildPlan(db: Pool | PoolConnection, rows: ImportRowInput[], lock
       teamCode: row.teamCode ?? '',
       name: row.name ?? '',
       projectName: row.projectName ?? '',
+      studentNames: row.studentNames,
+      presentationLink: row.presentationLink,
+      projectWebsiteLink: row.projectWebsiteLink,
     });
     return {
       rowNumber: row.rowNumber,
@@ -36,7 +41,12 @@ async function buildPlan(db: Pool | PoolConnection, rows: ImportRowInput[], lock
       action: parsed.success ? 'create' : 'error',
       errors: parsed.success ? [] : parsed.error.issues.map((i) => i.message),
       changes: {},
-      warnings: [],
+      warnings:
+        parsed.success && !parsed.data.studentNames
+          ? [
+              'Student names are not supplied in this legacy row. Add student details when available.',
+            ]
+          : [],
       clean: parsed.success ? parsed.data : undefined,
     };
   });
@@ -64,7 +74,7 @@ async function buildPlan(db: Pool | PoolConnection, rows: ImportRowInput[], lock
   const existing = new Map<string, RowDataPacket>();
   if (codes.length) {
     const [found] = await db.query<RowDataPacket[]>(
-      `SELECT id, team_code, name, project_name, status FROM teams
+      `SELECT * FROM teams
        WHERE team_code IN (?)${lock ? ' FOR UPDATE' : ''}`,
       [codes],
     );
@@ -86,6 +96,18 @@ async function buildPlan(db: Pool | PoolConnection, rows: ImportRowInput[], lock
     if (clean.projectName !== team.project_name) {
       row.changes.project_name = { from: String(team.project_name), to: clean.projectName };
     }
+    const current = teamResources(team);
+    for (const key of ['studentNames', 'presentationLink', 'projectWebsiteLink'] as const) {
+      if (clean[key] !== undefined && JSON.stringify(clean[key]) !== JSON.stringify(current[key]))
+        row.changes[key] = {
+          from: Array.isArray(current[key]) ? current[key]!.join('; ') : String(current[key] ?? ''),
+          to: Array.isArray(clean[key]) ? clean[key]!.join('; ') : String(clean[key] ?? ''),
+        };
+    }
+    row.clean = {
+      ...current,
+      ...Object.fromEntries(Object.entries(clean).filter(([, v]) => v !== undefined)),
+    } as ValidTeamInput;
     row.action = Object.keys(row.changes).length ? 'update' : 'unchanged';
     if (team.status === 'archived') {
       row.warnings.push(
@@ -148,8 +170,8 @@ export function commitImport(
       const clean = row.clean!;
       if (row.action === 'create') {
         const [insert] = await conn.query<ResultSetHeader>(
-          'INSERT INTO teams (team_code, name, project_name, created_by) VALUES (?, ?, ?, ?)',
-          [clean.teamCode, clean.name, clean.projectName, actor.id],
+          `INSERT INTO teams (team_code, name, project_name, created_by,${resourceColumns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [clean.teamCode, clean.name, clean.projectName, actor.id, ...resourceValues(clean)],
         );
         await writeAudit(conn, {
           actorId: actor.id,
@@ -170,6 +192,18 @@ export function commitImport(
         if (row.changes.project_name) {
           sets.push('project_name = ?');
           params.push(clean.projectName);
+        }
+        if (
+          ['studentNames', 'presentationLink', 'projectWebsiteLink'].some((key) => row.changes[key])
+        ) {
+          sets.push(
+            'student_name_1=?',
+            'student_name_2=?',
+            'student_name_3=?',
+            'presentation_link=?',
+            'project_website_link=?',
+          );
+          params.push(...resourceValues(clean));
         }
         await conn.query(`UPDATE teams SET ${sets.join(', ')} WHERE id = ?`, [
           ...params,

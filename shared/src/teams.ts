@@ -21,11 +21,19 @@ export const TEAM_LIMITS = {
   project: 200,
   reason: 500,
   importRows: 2000,
+  studentName: 200,
+  link: 2048,
 } as const;
 /** Letters (any language), digits, spaces and - _ . / # */
 export const TEAM_CODE_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} _\-./#]*$/u;
 
-export interface TeamSummary {
+export interface TeamResources {
+  studentNames?: string[];
+  presentationLink?: string | null;
+  projectWebsiteLink?: string | null;
+}
+
+export interface TeamSummary extends TeamResources {
   id: number;
   teamCode: string;
   name: string;
@@ -98,7 +106,7 @@ export interface TeamDetails extends TeamSummary {
   lastUpdatedAt: string | null;
 }
 
-export interface TeamInput {
+export interface TeamInput extends TeamResources {
   teamCode: string;
   name: string;
   projectName: string;
@@ -126,7 +134,7 @@ export interface BulkAssignResponse {
 
 // ---------- import ----------
 
-export interface ImportRowInput {
+export interface ImportRowInput extends TeamResources {
   /** 1-based line number in the uploaded file (header is line 1). */
   rowNumber: number;
   teamCode: string;

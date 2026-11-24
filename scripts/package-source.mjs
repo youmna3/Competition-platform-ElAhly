@@ -71,6 +71,7 @@ export const required = [
     '013_competition_lifecycle',
     '014_numeric_points',
     '015_reset_preserved_accounts',
+    '016_team_resources',
   ].map((n) => `server/migrations/${n}.sql`),
 ];
 export function allowedPath(path) {

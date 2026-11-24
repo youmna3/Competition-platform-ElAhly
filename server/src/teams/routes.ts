@@ -57,6 +57,9 @@ const importRow = z
     teamCode: z.string().max(1000).optional().default(''),
     name: z.string().max(1000).optional().default(''),
     projectName: z.string().max(1000).optional().default(''),
+    studentNames: z.array(z.string().max(1000)).max(10).optional(),
+    presentationLink: z.string().max(8192).nullable().optional(),
+    projectWebsiteLink: z.string().max(8192).nullable().optional(),
   })
   .strict();
 const importSchema = z

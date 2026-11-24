@@ -125,9 +125,12 @@ export function TeamImportPage() {
       <Card className="space-y-4">
         <h2 className="font-semibold">1. Download the template</h2>
         <p className="text-sm text-black/65">
-          Columns: <strong>Team ID</strong>, <strong>Team Name</strong> and{' '}
-          <strong>Project Name</strong>, all required. One team per row. A row whose Team ID already
-          exists updates that team, but only after you confirm. Other columns are ignored.
+          Use Team ID, Team Name, Project Name, Student 1 Name, Student 2 Name, Student 3 Name,
+          Presentation Link and Project Website Link. The first two student names are required in
+          the new template; the third student and links are optional. One team per row. Existing
+          team updates require confirmation. Legacy three-column files remain supported. Omitted
+          columns preserve existing student details and links; a blank supplied link column clears
+          that link.
         </p>
         <div className="flex flex-wrap gap-2">
           <a href="/templates/teams-import-template.xlsx" download className="secondary-link">

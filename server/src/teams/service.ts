@@ -1,3 +1,4 @@
+import { teamResources, resourceColumns, resourceValues } from './resources.js';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import {
   TEAM_ERRORS,
@@ -75,6 +76,7 @@ const PROGRESS_COUNTS = `
 
 function toSummary(r: RowDataPacket): TeamSummary {
   return {
+    ...teamResources(r),
     id: Number(r.id),
     teamCode: String(r.team_code),
     name: String(r.name),
@@ -127,7 +129,7 @@ export async function listTeams(pool: Pool, q: ListTeamsQuery) {
   // Sort column comes from a fixed allow-list, never from the request directly.
   const order = `${SORT_COLUMNS[q.sort]} ${q.dir === 'desc' ? 'DESC' : 'ASC'}, t.team_code ASC, t.id ASC`;
   const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT t.id, t.team_code, t.name, t.project_name, t.status, t.created_at, t.archived_at, ${PROGRESS_COUNTS}
+    `SELECT t.*, ${PROGRESS_COUNTS}
      FROM teams t
      ${clause}
      ORDER BY ${order}
@@ -267,8 +269,8 @@ export function createTeam(pool: Pool, actor: Actor, input: ValidTeamInput): Pro
     let insert: ResultSetHeader;
     try {
       [insert] = await conn.query<ResultSetHeader>(
-        'INSERT INTO teams (team_code, name, project_name, created_by) VALUES (?, ?, ?, ?)',
-        [input.teamCode, input.name, input.projectName, actor.id],
+        `INSERT INTO teams (team_code, name, project_name, created_by,${resourceColumns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [input.teamCode, input.name, input.projectName, actor.id, ...resourceValues(input)],
       );
     } catch (error) {
       if (isDuplicate(error)) throw codeTaken(input.teamCode);
@@ -281,7 +283,18 @@ export function createTeam(pool: Pool, actor: Actor, input: ValidTeamInput): Pro
       entityType: 'team',
       entityId: insert.insertId,
       ipAddress: actor.ip,
-      details: { team_code: input.teamCode, name: input.name, project_name: input.projectName },
+      details: {
+        team_code: input.teamCode,
+        name: input.name,
+        project_name: input.projectName,
+        ...teamResources({
+          student_name_1: input.studentNames?.[0],
+          student_name_2: input.studentNames?.[1],
+          student_name_3: input.studentNames?.[2],
+          presentation_link: input.presentationLink,
+          project_website_link: input.projectWebsiteLink,
+        }),
+      },
     });
     return getTeamDetails(conn, insert.insertId);
   });
@@ -301,7 +314,10 @@ export function updateTeam(
     const team = rows[0];
     if (!team) throw notFound();
 
+    const currentResources = teamResources(team);
     const next = {
+      ...currentResources,
+      ...Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)),
       teamCode: input.teamCode ?? String(team.team_code),
       name: input.name ?? String(team.name),
       projectName: input.projectName ?? String(team.project_name),
@@ -312,6 +328,16 @@ export function updateTeam(
     if (next.name !== team.name) changes.name = { from: team.name, to: next.name };
     if (next.projectName !== team.project_name)
       changes.project_name = { from: team.project_name, to: next.projectName };
+    for (const key of ['studentNames', 'presentationLink', 'projectWebsiteLink'] as const) {
+      if (JSON.stringify(next[key]) !== JSON.stringify(currentResources[key]))
+        changes[key] = {
+          from:
+            typeof currentResources[key] === 'string'
+              ? String(currentResources[key])
+              : JSON.stringify(currentResources[key] ?? null),
+          to: typeof next[key] === 'string' ? String(next[key]) : JSON.stringify(next[key] ?? null),
+        };
+    }
     if (Object.keys(changes).length === 0) return getTeamDetails(conn, id);
 
     if (changes.team_code) {
@@ -322,12 +348,10 @@ export function updateTeam(
       if (dupes.length) throw codeTaken(next.teamCode);
     }
     try {
-      await conn.query('UPDATE teams SET team_code = ?, name = ?, project_name = ? WHERE id = ?', [
-        next.teamCode,
-        next.name,
-        next.projectName,
-        id,
-      ]);
+      await conn.query(
+        'UPDATE teams SET team_code = ?, name = ?, project_name = ?, student_name_1=?,student_name_2=?,student_name_3=?,presentation_link=?,project_website_link=? WHERE id = ?',
+        [next.teamCode, next.name, next.projectName, ...resourceValues(next), id],
+      );
     } catch (error) {
       if (isDuplicate(error)) throw codeTaken(next.teamCode);
       throw error;

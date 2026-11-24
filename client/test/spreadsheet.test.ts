@@ -69,6 +69,40 @@ describe('XLSX reading', () => {
 });
 
 describe('header mapping', () => {
+  it('maps student names and links, preserving absent columns for legacy updates', () => {
+    const parsed = mapImportTable([
+      [
+        'Team ID',
+        'Team Name',
+        'Project Name',
+        'Student 1 Name',
+        'Student 2 Name',
+        'Student 3 Name',
+        'Presentation Link',
+        'Project Website Link',
+      ],
+      ['T-1', 'Team', 'Project', 'Student A', 'Student B', '', 'https://example.com/slides', ''],
+      ['T-2', 'Other', 'Other', 'Student C', 'Student D', 'Student E', '', 'https://example.com'],
+    ]);
+    expect(parsed.fileErrors).toEqual([]);
+    expect(parsed.ignoredColumns).toEqual([]);
+    expect(parsed.rows[0]).toMatchObject({
+      studentNames: ['Student A', 'Student B'],
+      presentationLink: 'https://example.com/slides',
+      projectWebsiteLink: null,
+    });
+    expect(parsed.rows[1]).toMatchObject({
+      studentNames: ['Student C', 'Student D', 'Student E'],
+      presentationLink: null,
+      projectWebsiteLink: 'https://example.com',
+    });
+    expect(
+      mapImportTable([
+        ['Team ID', 'Team Name', 'Project Name'],
+        ['T-1', 'Team', 'Project'],
+      ]).rows[0],
+    ).not.toHaveProperty('studentNames');
+  });
   it('accepts common header spellings and reports missing required columns', () => {
     expect(
       mapImportTable([

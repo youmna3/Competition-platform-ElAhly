@@ -1,3 +1,4 @@
+import { teamResources, resourceValues } from '../teams/resources.js';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import {
   maximumScore,
@@ -46,6 +47,40 @@ function where(filters: ReportFilters, corrections = false) {
     values.push(new Date(filters.to));
   }
   return { sql: terms.length ? ' AND ' + terms.join(' AND ') : '', values };
+}
+
+async function appendTeamResources(conn: PoolConnection, sheets: ReportSheet[]) {
+  const targets = sheets.filter((s) => s.columns.includes('Team ID'));
+  const codes = [
+    ...new Set(targets.flatMap((s) => s.rows.map((r) => String(r[s.columns.indexOf('Team ID')])))),
+  ];
+  if (!codes.length) {
+    for (const s of targets)
+      s.columns.push(
+        'Student 1 Name',
+        'Student 2 Name',
+        'Student 3 Name',
+        'Presentation Link',
+        'Project Website Link',
+      );
+    return;
+  }
+  const [teams] = await conn.query<RowDataPacket[]>('SELECT * FROM teams WHERE team_code IN (?)', [
+    codes,
+  ]);
+  const byCode = new Map(teams.map((t) => [String(t.team_code), resourceValues(teamResources(t))]));
+  for (const s of targets) {
+    const codeIndex = s.columns.indexOf('Team ID');
+    s.columns.push(
+      'Student 1 Name',
+      'Student 2 Name',
+      'Student 3 Name',
+      'Presentation Link',
+      'Project Website Link',
+    );
+    for (const row of s.rows)
+      row.push(...(byCode.get(String(row[codeIndex])) ?? [null, null, null, null, null]));
+  }
 }
 
 async function resultsSheets(conn: PoolConnection, filters: ReportFilters, progress: boolean) {
@@ -533,6 +568,7 @@ export async function buildReport(
             : kind === 'corrections'
               ? await correctionSheets(conn, filters)
               : await rubricSheets(conn, filters);
+      await appendTeamResources(conn, sheets);
       return { kind, generatedAt: iso(now!.generated_at)!, filters, sheets };
     } finally {
       await conn.query('COMMIT');

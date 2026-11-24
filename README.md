@@ -133,6 +133,19 @@ the published rubric and the read-only competition leaderboard.
   evaluation for the judge to edit and resubmit, retaining its original rubric.
 - Teams are archived instead of deleted. Removed assignments retain past evaluations.
 - Team import accepts the downloadable XLSX/CSV templates on the import page.
+- Create/Edit Team captures two required student names, an optional third student,
+  Presentation Link and Project Website Link. Links are optional HTTP/HTTPS URLs
+  without embedded credentials. Assigned judges see these details on their team
+  cards and evaluation pages; external links open in a separate tab.
+- The XLSX/CSV templates include `Student 1 Name`, `Student 2 Name`,
+  `Student 3 Name`, `Presentation Link` and `Project Website Link`. When supplied,
+  student columns require two or three nonempty names. Legacy three-column files
+  remain supported and preserve existing student/link details; a blank link in a
+  supplied link column clears that link. Existing-team updates require confirmation.
+- Team-based CSV/XLSX reports append the three student names and two links. These
+  are current team details; immutable evaluation snapshots and scores are unchanged.
+  Migration 016 adds nullable team fields so existing teams remain usable without
+  invented names. Apply pending migrations before running the updated server.
 - Password recovery for an existing account uses `npm run auth:reset-password -- admin@example.com`
   and the tool's confirmation prompt (this deliberately replaces that account password). There is no public sign-up.
 
@@ -344,7 +357,7 @@ Outputs under ignored `artifacts/`:
 The packager uses explicit source/configuration allowlists, sorted paths and fixed ZIP
 timestamps. Identical source produces identical ZIP bytes with the same Node runtime.
 It includes source from all workspaces, manifests, the lockfile, assets, import/test
-fixtures, migrations 001-013, tests, the safe environment example and Markdown docs.
+fixtures, migrations 001-016, tests, the safe environment example and Markdown docs.
 It checks required files even when they have not yet been added to Git.
 
 Real environment files, backups, Git metadata, dependencies, build output, screenshots,

@@ -25,7 +25,7 @@ and a per-file manifest:
 
 - `ischool-ahly-production-runtime.zip`: compiled application, browser assets,
   shared runtime, all three workspace manifests, lockfile, compiled maintenance
-  tools, unchanged migrations 001–013 and this runbook. Install production dependencies
+  tools, migrations 001–016 and this runbook. Install production dependencies
   from the lockfile on the target; dependencies are not embedded as `node_modules`.
 - `ischool-ahly-production-build-source.zip`: production application source,
   assets, manifests, lockfile, build configurations, production maintenance source

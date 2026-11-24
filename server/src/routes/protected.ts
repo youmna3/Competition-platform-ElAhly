@@ -1,3 +1,4 @@
+import { teamResources } from '../teams/resources.js';
 import { competitionRouter } from '../competition/routes.js';
 import type { CompetitionReset } from '../competition/reset.js';
 import { Router } from 'express';
@@ -72,7 +73,7 @@ export function judgeRouter(pool: Pool): Router {
   router.get('/assignments', async (req, res, next) => {
     try {
       const [rows] = await pool.query<RowDataPacket[]>(
-        `SELECT t.id, t.team_code, t.name, t.project_name, tj.assigned_at, e.status AS evaluation_status,
+        `SELECT t.*, tj.assigned_at, e.status AS evaluation_status,
                 e.required_scored, e.required_count, e.total_score, e.submitted_at, v.version_no,
                 e.reopen_notice_pending, e.reopen_reason,
                 (e.rubric_version_id <> r.published_version_id) AS outdated,
@@ -88,6 +89,7 @@ export function judgeRouter(pool: Pool): Router {
         [req.user!.id],
       );
       const body: JudgeAssignment[] = rows.map((r) => ({
+        ...teamResources(r),
         teamId: Number(r.id),
         teamCode: String(r.team_code),
         teamName: String(r.name),

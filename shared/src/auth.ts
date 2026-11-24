@@ -1,3 +1,4 @@
+import type { TeamResources } from './teams.js';
 /** Authentication types shared by the API and the web client. */
 
 export type UserRole = 'admin' | 'judge';
@@ -58,7 +59,7 @@ export interface AdminOverview {
 }
 
 /** GET /api/judge/assignments */
-export interface JudgeAssignment {
+export interface JudgeAssignment extends TeamResources {
   teamId: number;
   teamCode: string;
   teamName: string;

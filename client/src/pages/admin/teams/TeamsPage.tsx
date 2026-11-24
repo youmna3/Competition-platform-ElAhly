@@ -130,6 +130,12 @@ export function TeamsPage() {
     if (values.teamCode !== team.teamCode) body.teamCode = values.teamCode;
     if (values.name !== team.name) body.name = values.name;
     if (values.projectName !== team.projectName) body.projectName = values.projectName;
+    if (JSON.stringify(values.studentNames ?? []) !== JSON.stringify(team.studentNames ?? []))
+      body.studentNames = values.studentNames;
+    if ((values.presentationLink ?? null) !== (team.presentationLink ?? null))
+      body.presentationLink = values.presentationLink;
+    if ((values.projectWebsiteLink ?? null) !== (team.projectWebsiteLink ?? null))
+      body.projectWebsiteLink = values.projectWebsiteLink;
     if (Object.keys(body).length === 0) return setDialog(null);
     const { team: updated } = await api<{ team: TeamDetails }>(`/api/admin/teams/${team.id}`, {
       method: 'PATCH',

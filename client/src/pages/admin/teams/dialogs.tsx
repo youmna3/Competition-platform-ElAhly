@@ -32,6 +32,13 @@ export function TeamFormDialog({
   const [teamCode, setTeamCode] = useState(team?.teamCode ?? '');
   const [name, setName] = useState(team?.name ?? '');
   const [projectName, setProjectName] = useState(team?.projectName ?? '');
+  const [students, setStudents] = useState([
+    team?.studentNames?.[0] ?? '',
+    team?.studentNames?.[1] ?? '',
+    team?.studentNames?.[2] ?? '',
+  ]);
+  const [presentationLink, setPresentationLink] = useState(team?.presentationLink ?? '');
+  const [projectWebsiteLink, setProjectWebsiteLink] = useState(team?.projectWebsiteLink ?? '');
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const fields = fieldErrors(error);
@@ -45,6 +52,9 @@ export function TeamFormDialog({
         teamCode: teamCode.trim(),
         name: name.trim(),
         projectName: projectName.trim(),
+        studentNames: students.map((s) => s.trim()).filter(Boolean),
+        presentationLink: presentationLink.trim() || null,
+        projectWebsiteLink: projectWebsiteLink.trim() || null,
       });
     } catch (e) {
       setError(e);
@@ -95,6 +105,43 @@ export function TeamFormDialog({
           autoComplete="off"
           error={fields.projectName}
         />
+        <fieldset className="space-y-3">
+          <legend className="mb-2 font-semibold">Students</legend>
+          <p className="text-sm text-muted">Enter two or three student names in team order.</p>
+          {students.map((value, i) => (
+            <TextField
+              key={i}
+              label={`Student ${i + 1} full name${i === 2 ? ' (optional)' : ''}`}
+              value={value}
+              required={i < 2}
+              maxLength={TEAM_LIMITS.studentName}
+              onChange={(e) =>
+                setStudents((old) => old.map((v, j) => (i === j ? e.target.value : v)))
+              }
+              error={fields[`studentNames.${i}`] ?? (i === 0 ? fields.studentNames : undefined)}
+            />
+          ))}
+        </fieldset>
+        <TextField
+          label="Presentation Link"
+          type="url"
+          value={presentationLink}
+          maxLength={TEAM_LIMITS.link}
+          placeholder="https://..."
+          onChange={(e) => setPresentationLink(e.target.value)}
+          error={fields.presentationLink}
+          hint="Optional. Judges can open this presentation in a new tab."
+        />
+        <TextField
+          label="Project Website Link"
+          type="url"
+          value={projectWebsiteLink}
+          maxLength={TEAM_LIMITS.link}
+          placeholder="https://..."
+          onChange={(e) => setProjectWebsiteLink(e.target.value)}
+          error={fields.projectWebsiteLink}
+          hint="Optional. Enter a complete HTTP or HTTPS URL."
+        />
       </form>
       <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
         <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
@@ -103,7 +150,14 @@ export function TeamFormDialog({
         <Button
           type="submit"
           form="team-form"
-          disabled={saving || !teamCode.trim() || !name.trim() || !projectName.trim()}
+          disabled={
+            saving ||
+            !teamCode.trim() ||
+            !name.trim() ||
+            !projectName.trim() ||
+            !students[0]!.trim() ||
+            !students[1]!.trim()
+          }
         >
           {saving ? 'Saving…' : team ? 'Save changes' : 'Create team'}
         </Button>

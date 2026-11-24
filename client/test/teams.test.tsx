@@ -15,8 +15,11 @@ import { RequireAuth } from '../src/auth/RequireAuth';
 import { AppLayout } from '../src/components/AppLayout';
 import { ToastProvider } from '../src/components/Toast';
 import { TeamsPage } from '../src/pages/admin/teams/TeamsPage';
+import { TeamDetailsPage } from '../src/pages/admin/teams/TeamDetailsPage';
 import { TeamImportPage } from '../src/pages/admin/teams/TeamImportPage';
 import { JudgeTeamsPage } from '../src/pages/judge/JudgeTeamsPage';
+import { TeamFormDialog } from '../src/pages/admin/teams/dialogs';
+import { TeamResources } from '../src/components/TeamResources';
 
 const adminUser: AuthUser = {
   id: 1,
@@ -133,6 +136,7 @@ function renderAt(path: string) {
                     </RequireAuth>
                   }
                 />
+                <Route path="/admin/teams/:id" element={<TeamDetailsPage />} />
                 <Route path="/admin" element={<p>Admin dashboard</p>} />
               </Route>
               <Route path="/login" element={<p>Sign-in page</p>} />
@@ -148,7 +152,124 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('team resource forms and judge display', () => {
+  it('requires two names on create and submits the optional third and links', async () => {
+    const submit = vi.fn(async () => {});
+    render(<TeamFormDialog onSubmit={submit} onClose={() => {}} />);
+    await userEvent.type(screen.getByLabelText(/Team ID/), 'NEW-1');
+    await userEvent.type(screen.getByLabelText('Team name'), 'New team');
+    await userEvent.type(screen.getByLabelText('Project name'), 'New project');
+    expect(screen.getByRole('button', { name: 'Create team' })).toBeDisabled();
+    await userEvent.type(screen.getByLabelText(/Student 1 full name/), 'Student A');
+    expect(screen.getByRole('button', { name: 'Create team' })).toBeDisabled();
+    await userEvent.type(screen.getByLabelText(/Student 2 full name/), 'Student B');
+    await userEvent.type(screen.getByLabelText(/Student 3 full name/), 'Student C');
+    await userEvent.type(screen.getByLabelText('Presentation Link'), 'https://example.com/slides');
+    await userEvent.type(screen.getByLabelText('Project Website Link'), 'https://example.com');
+    await userEvent.click(screen.getByRole('button', { name: 'Create team' }));
+    expect(submit).toHaveBeenCalledWith({
+      teamCode: 'NEW-1',
+      name: 'New team',
+      projectName: 'New project',
+      studentNames: ['Student A', 'Student B', 'Student C'],
+      presentationLink: 'https://example.com/slides',
+      projectWebsiteLink: 'https://example.com',
+    });
+  });
+  it('populates existing details and permits clearing an optional link', async () => {
+    const submit = vi.fn(async () => {});
+    render(
+      <TeamFormDialog
+        team={team(1, 'T-1', {
+          studentNames: ['Student A', 'Student B'],
+          presentationLink: 'https://example.com/slides',
+          projectWebsiteLink: 'https://example.com',
+        })}
+        onSubmit={submit}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText(/Student 1 full name/)).toHaveValue('Student A');
+    expect(screen.getByLabelText(/Student 2 full name/)).toHaveValue('Student B');
+    expect(screen.getByLabelText('Presentation Link')).toHaveValue('https://example.com/slides');
+    await userEvent.clear(screen.getByLabelText('Presentation Link'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        studentNames: ['Student A', 'Student B'],
+        presentationLink: null,
+        projectWebsiteLink: 'https://example.com',
+      }),
+    );
+  });
+  it('shows students and safe external links while withholding unsafe schemes', () => {
+    const { rerender } = render(
+      <TeamResources
+        team={{
+          studentNames: ['Student A', 'Student B'],
+          presentationLink: 'https://example.com/slides',
+          projectWebsiteLink: 'https://example.com',
+        }}
+      />,
+    );
+    expect(screen.getByText('Student A')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Open Presentation' })).toHaveAttribute(
+      'rel',
+      'noopener noreferrer',
+    );
+    expect(screen.getByRole('link', { name: 'Open Project Website' })).toHaveAttribute(
+      'target',
+      '_blank',
+    );
+    rerender(<TeamResources team={{ presentationLink: 'javascript:alert(1)' }} />);
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText(/Student details have not been provided/)).toBeVisible();
+  });
+});
+
 describe('Teams page', () => {
+  it.each(['/admin/teams', '/admin/teams/1'])(
+    'saves resource-only edits through the page handler at %s',
+    async (path) => {
+      const resourceTeam = team(1, 'AHL-001', {
+        studentNames: ['Student A', 'Student B'],
+        presentationLink: 'https://example.com/slides',
+        projectWebsiteLink: 'https://example.com',
+      });
+      const details = {
+        ...resourceTeam,
+        archiveReason: null,
+        createdByEmail: null,
+        provisionalAverage: null,
+        readyForResults: false,
+        lastUpdatedAt: null,
+        assignments: [],
+        pastEvaluations: [],
+      };
+      const calls = mockApi(adminUser, (c) =>
+        c.url === '/api/admin/teams/1'
+          ? { status: 200, body: { team: details } }
+          : c.url.startsWith('/api/admin/teams?')
+            ? { status: 200, body: { teams: [resourceTeam], total: 1, page: 1, pageSize: 25 } }
+            : undefined,
+      );
+      renderAt(path);
+      const edit = await screen.findAllByRole('button', { name: /^Edit/ });
+      await userEvent.click(edit[0]!);
+      const dialog = await screen.findByRole('dialog');
+      await userEvent.type(within(dialog).getByLabelText(/Student 3 full name/), 'Student C');
+      await userEvent.clear(within(dialog).getByLabelText('Presentation Link'));
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+      await waitFor(() =>
+        expect(
+          calls.find((c) => c.url === '/api/admin/teams/1' && c.method === 'PATCH')?.body,
+        ).toEqual({
+          studentNames: ['Student A', 'Student B', 'Student C'],
+          presentationLink: null,
+        }),
+      );
+    },
+  );
   it('appears in the administrator navigation and lists teams with progress', async () => {
     mockApi(adminUser);
     renderAt('/admin/teams');

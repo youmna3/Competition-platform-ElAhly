@@ -1,3 +1,4 @@
+import { TeamResources } from '../../../components/TeamResources';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -80,6 +81,12 @@ export function TeamDetailsPage() {
     if (values.teamCode !== team.teamCode) body.teamCode = values.teamCode;
     if (values.name !== team.name) body.name = values.name;
     if (values.projectName !== team.projectName) body.projectName = values.projectName;
+    if (JSON.stringify(values.studentNames ?? []) !== JSON.stringify(team.studentNames ?? []))
+      body.studentNames = values.studentNames;
+    if ((values.presentationLink ?? null) !== (team.presentationLink ?? null))
+      body.presentationLink = values.presentationLink;
+    if ((values.projectWebsiteLink ?? null) !== (team.projectWebsiteLink ?? null))
+      body.projectWebsiteLink = values.projectWebsiteLink;
     if (Object.keys(body).length) {
       await api(`/api/admin/teams/${team.id}`, { method: 'PATCH', body });
       toast('Team details saved.');
@@ -217,6 +224,9 @@ export function TeamDetailsPage() {
         </dl>
       </Card>
 
+      <Card>
+        <TeamResources team={team} />
+      </Card>
       {team.mixedVersions && (
         <Alert tone="warning" title="Evaluations use different rubric versions">
           Some judges evaluated this team on an older rubric version, with different weights. Their

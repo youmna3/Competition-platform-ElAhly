@@ -200,9 +200,32 @@ export async function readXlsx(buffer: ArrayBuffer): Promise<string[][]> {
 // Header mapping
 // ---------------------------------------------------------------------------
 
-type Field = 'teamCode' | 'name' | 'projectName';
+type Field =
+  | 'teamCode'
+  | 'name'
+  | 'projectName'
+  | 'student1'
+  | 'student2'
+  | 'student3'
+  | 'presentationLink'
+  | 'projectWebsiteLink';
 
 const HEADER_ALIASES: Record<string, Field> = {
+  student1: 'student1',
+  student1name: 'student1',
+  student1fullname: 'student1',
+  student2: 'student2',
+  student2name: 'student2',
+  student2fullname: 'student2',
+  student3: 'student3',
+  student3name: 'student3',
+  student3fullname: 'student3',
+  presentationlink: 'presentationLink',
+  presentationurl: 'presentationLink',
+  projectwebsitelink: 'projectWebsiteLink',
+  projectwebsite: 'projectWebsiteLink',
+  website: 'projectWebsiteLink',
+  websiteurl: 'projectWebsiteLink',
   teamid: 'teamCode',
   teamcode: 'teamCode',
   teamnumber: 'teamCode',
@@ -216,7 +239,16 @@ const HEADER_ALIASES: Record<string, Field> = {
   projecttitle: 'projectName',
 };
 
-export const TEMPLATE_HEADERS = ['Team ID', 'Team Name', 'Project Name'] as const;
+export const TEMPLATE_HEADERS = [
+  'Team ID',
+  'Team Name',
+  'Project Name',
+  'Student 1 Name',
+  'Student 2 Name',
+  'Student 3 Name',
+  'Presentation Link',
+  'Project Website Link',
+] as const;
 
 export interface ParsedImportFile {
   rows: ImportRowInput[];
@@ -242,7 +274,7 @@ export function mapImportTable(table: string[][]): ParsedImportFile {
       fileErrors.push(`The column "${h.trim()}" appears more than once.`);
     else columns.set(field, i);
   });
-  const missing = (['teamCode', 'name', 'projectName'] as Field[]).filter((f) => !columns.has(f));
+  const missing = (['teamCode', 'name', 'projectName'] as const).filter((f) => !columns.has(f));
   if (missing.length) {
     const label = { teamCode: 'Team ID', name: 'Team Name', projectName: 'Project Name' };
     fileErrors.push(
@@ -263,6 +295,21 @@ export function mapImportTable(table: string[][]): ParsedImportFile {
       teamCode: cell(r, 'teamCode'),
       name: cell(r, 'name'),
       projectName: cell(r, 'projectName'),
+      ...(columns.has('student1') || columns.has('student2') || columns.has('student3')
+        ? {
+            studentNames: [
+              cell(r, 'student1'),
+              cell(r, 'student2'),
+              ...(cell(r, 'student3') ? [cell(r, 'student3')] : []),
+            ],
+          }
+        : {}),
+      ...(columns.has('presentationLink')
+        ? { presentationLink: cell(r, 'presentationLink') || null }
+        : {}),
+      ...(columns.has('projectWebsiteLink')
+        ? { projectWebsiteLink: cell(r, 'projectWebsiteLink') || null }
+        : {}),
     });
   }
   if (!fileErrors.length && rows.length === 0)

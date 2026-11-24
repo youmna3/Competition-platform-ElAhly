@@ -1,3 +1,4 @@
+import { teamResources } from '../teams/resources.js';
 import { competitionStatus, requireCompetitionState } from '../competition/service.js';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import {
@@ -66,7 +67,7 @@ interface TeamRow {
 
 async function teamFor(db: Db, judgeId: number, teamId: number, lock = false) {
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT t.id, t.team_code, t.name, t.project_name, t.status,
+    `SELECT t.*,
             EXISTS (SELECT 1 FROM team_judges tj WHERE tj.team_id = t.id AND tj.judge_id = ?) AS assigned
      FROM teams t WHERE t.id = ?${lock ? ' FOR UPDATE' : ''}`,
     [judgeId, teamId],
@@ -181,6 +182,7 @@ export async function getJudgeEvaluation(
   }
   return {
     team: {
+      ...teamResources(team as unknown as Record<string, unknown>),
       id: Number(team.id),
       teamCode: String(team.team_code),
       name: String(team.name),

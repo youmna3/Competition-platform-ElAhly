@@ -4,7 +4,7 @@
  * never trusts totals sent by the browser.
  */
 import type { RubricVersion } from './rubric.js';
-import type { TeamStatus } from './teams.js';
+import type { TeamStatus, TeamResources } from './teams.js';
 
 export type EvaluationStatus = 'draft' | 'submitted';
 
@@ -61,7 +61,7 @@ export interface EvaluationDetail extends EvaluationInput {
   reopenNoticePending: boolean;
 }
 
-export interface EvaluationTeam {
+export interface EvaluationTeam extends TeamResources {
   id: number;
   teamCode: string;
   name: string;

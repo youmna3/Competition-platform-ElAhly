@@ -1,3 +1,4 @@
+import { TeamResources } from '../../components/TeamResources';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation } from 'react-router';
@@ -213,6 +214,7 @@ export function JudgeTeamsPage() {
                         )}
                       </div>
                     )}
+                    <TeamResources team={a} />
                     <div className="mt-auto space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <Progress a={a} />

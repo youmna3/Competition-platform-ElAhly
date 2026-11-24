@@ -1,3 +1,4 @@
+import { TeamResources } from '../../components/TeamResources';
 import { useCompetition } from '../../components/CompetitionNotice';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -156,6 +157,9 @@ export function EvaluationPage() {
                 : 'Draft'}
           </Badge>
         )}
+      </Card>
+      <Card>
+        <TeamResources team={team} />
       </Card>
       {outdated && (
         <Alert tone="warning" title="This evaluation uses an older rubric version">

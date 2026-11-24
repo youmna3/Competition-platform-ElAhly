@@ -19,6 +19,8 @@ import {
   testTarget,
 } from './helpers.js';
 import { makeTestApp, signIn } from './appHelpers.js';
+import { buildReport } from '../../src/reports/service.js';
+import { encodeCsv, encodeXlsx } from '../../src/reports/format.js';
 
 const ADMIN = { email: 'youmna54@gmail.com', password: 'Admin-Password-2026!' };
 const JUDGE = { email: 'judge@example.com', password: 'Judge-Password-2026!' };
@@ -136,6 +138,118 @@ describe('access control', () => {
 });
 
 describe('creating and editing teams', () => {
+  it('persists student resources, exposes them only to assigned judges, and includes exports', async () => {
+    const resources = {
+      studentNames: ['Student Alpha', 'Student Beta', 'Student Gamma'],
+      presentationLink: 'https://example.com/presentation',
+      projectWebsiteLink: 'https://example.com/project',
+    };
+    const created = await admin
+      .post('/api/admin/teams')
+      .send({ teamCode: 'RES-1', name: 'Resources', projectName: 'Project', ...resources });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = created.body.team.id;
+    expect(created.body.team).toMatchObject(resources);
+    expect((await admin.get('/api/admin/teams')).body.teams[0]).toMatchObject(resources);
+    await admin.put(`/api/admin/teams/${id}/judges`).send({ judgeIds: [judgeId] });
+    const judge = await signIn(app, JUDGE.email, JUDGE.password);
+    expect((await judge.get('/api/judge/assignments')).body.assignments[0]).toMatchObject(
+      resources,
+    );
+    const other = await signIn(app, JUDGE2.email, JUDGE2.password);
+    expect((await other.get('/api/judge/assignments')).body.assignments).toEqual([]);
+    expect((await other.get(`/api/judge/teams/${id}/evaluation`)).status).toBe(404);
+    expect(
+      (await judge.patch(`/api/admin/teams/${id}`).send({ studentNames: ['Changed', 'Names'] }))
+        .status,
+    ).toBe(403);
+    const report = await buildReport(pool, 'progress', {});
+    const tab = report.sheets.find((s) => s.columns.includes('Team ID'))!;
+    expect(tab.columns.slice(-5)).toEqual([
+      'Student 1 Name',
+      'Student 2 Name',
+      'Student 3 Name',
+      'Presentation Link',
+      'Project Website Link',
+    ]);
+    expect(tab.rows[0]!.slice(-5)).toEqual([
+      ...resources.studentNames,
+      resources.presentationLink,
+      resources.projectWebsiteLink,
+    ]);
+    expect(encodeCsv(report).toString()).toContain('Student Alpha');
+    expect(encodeXlsx(report).subarray(0, 2).toString()).toBe('PK');
+    const updated = await admin
+      .patch(`/api/admin/teams/${id}`)
+      .send({ studentNames: ['Student Alpha', 'Student Beta'], presentationLink: null });
+    expect(updated.status, JSON.stringify(updated.body)).toBe(200);
+    expect(updated.body.team).toMatchObject({
+      studentNames: ['Student Alpha', 'Student Beta'],
+      presentationLink: null,
+      projectWebsiteLink: resources.projectWebsiteLink,
+    });
+    const legacy = await admin.patch(`/api/admin/teams/${id}`).send({ name: 'Renamed' });
+    expect(legacy.body.team).toMatchObject({
+      studentNames: ['Student Alpha', 'Student Beta'],
+      projectWebsiteLink: resources.projectWebsiteLink,
+    });
+  });
+  it('validates resource imports row by row, confirms updates, and preserves omitted fields', async () => {
+    const row = {
+      rowNumber: 2,
+      teamCode: 'RES-2',
+      name: 'Import',
+      projectName: 'Project',
+      studentNames: ['First Student', 'Second Student'],
+      presentationLink: 'https://example.com/slides',
+      projectWebsiteLink: 'https://example.com',
+    };
+    const preview = await admin.post('/api/admin/teams/import/preview').send({
+      rows: [
+        row,
+        { ...row, rowNumber: 3, teamCode: 'BAD', studentNames: ['Only one'] },
+        { ...row, rowNumber: 4, teamCode: 'BAD-LINK', presentationLink: 'javascript:alert(1)' },
+      ],
+    });
+    expect(preview.body.summary).toEqual({ create: 1, update: 0, unchanged: 0, error: 2 });
+    expect((await admin.post('/api/admin/teams/import/commit').send({ rows: [row] })).status).toBe(
+      200,
+    );
+    const id = (await admin.get('/api/admin/teams')).body.teams[0].id;
+    const replacement = {
+      ...row,
+      studentNames: ['First Student', 'Second Student', 'Third Student'],
+      presentationLink: null,
+    };
+    expect(
+      (await admin.post('/api/admin/teams/import/commit').send({ rows: [replacement] })).status,
+    ).toBe(409);
+    expect(
+      (
+        await admin
+          .post('/api/admin/teams/import/commit')
+          .send({ rows: [replacement], confirmUpdates: true })
+      ).status,
+    ).toBe(200);
+    const legacy = {
+      rowNumber: 2,
+      teamCode: row.teamCode,
+      name: 'Legacy rename',
+      projectName: 'Project',
+    };
+    expect(
+      (
+        await admin
+          .post('/api/admin/teams/import/commit')
+          .send({ rows: [legacy], confirmUpdates: true })
+      ).status,
+    ).toBe(200);
+    expect((await admin.get(`/api/admin/teams/${id}`)).body.team).toMatchObject({
+      studentNames: replacement.studentNames,
+      presentationLink: null,
+      projectWebsiteLink: row.projectWebsiteLink,
+    });
+  });
   it('creates a team, audits it, and shows it in the list', async () => {
     const id = await newTeam('AHL-001', 'Falcons', 'Smart Irrigation');
     const res = await admin.get(`/api/admin/teams/${id}`);

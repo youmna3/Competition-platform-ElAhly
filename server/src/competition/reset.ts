@@ -6,15 +6,25 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import mysql, { type Connection, type RowDataPacket } from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
-import { RESET_ADMIN_EMAIL, RESET_PHRASE, type ResetPreview } from '@judging/shared';
+import {
+  RESET_ADMIN_EMAIL,
+  RESET_PHRASE,
+  RESET_PRESERVED_EMAILS,
+  type PreservedAccount,
+  type ResetPreview,
+} from '@judging/shared';
 import {
   backupDatabase,
+  compareFingerprints,
+  fingerprintDatabase,
+  restoreDatabase,
   verifyBackupChecksum,
   verifyDumpComplete,
   sha256File,
   type BackupResult,
   type MysqlServer,
 } from '../db/backup.js';
+import { assertScratchTarget, scratchDatabaseName } from '../db/scratchName.js';
 import { RuleError } from '../errors.js';
 import type { Actor } from '../teams/service.js';
 
@@ -58,6 +68,10 @@ const retained = new Set([
 ]);
 const failure = (message: string, status = 409) => new RuleError(status, 'RESET_REFUSED', message);
 const digest = (s: string) => createHash('sha256').update(s).digest('hex');
+const RESTORE_SUFFIX = '_reset_restore';
+interface PreservedRow extends PreservedAccount {
+  passwordHash: string;
+}
 interface Ticket {
   actorId: number;
   sessionHash: string;
@@ -66,8 +80,11 @@ interface Ticket {
   credentialHash: string;
   expires: number;
   backup: BackupResult;
+  preserved: PreservedRow[];
   preview: ResetPreview;
 }
+const publicAccount = ({ passwordHash: _hash, ...account }: PreservedRow): PreservedAccount =>
+  account;
 
 /** Tickets are session-bound, expire in ten minutes and disappear on restart. */
 export class CompetitionReset {
@@ -108,7 +125,7 @@ export class CompetitionReset {
 
   private async authorize(conn: Connection, actor: Actor, password: string) {
     if (actor.email.toLowerCase() !== RESET_ADMIN_EMAIL)
-      throw failure('Only the preserved administrator may request a reset.', 403);
+      throw failure('Only the authorized reset administrator may request a reset.', 403);
     const [rows] = await conn.query<RowDataPacket[]>(
       "SELECT id,password_hash FROM users WHERE id=? AND email=? AND role='admin' AND status='active'",
       [actor.id, RESET_ADMIN_EMAIL],
@@ -118,7 +135,86 @@ export class CompetitionReset {
     return String(rows[0].password_hash);
   }
 
-  private async snapshot(conn: Connection) {
+  /** The three-account reset procedure arrives with migration 015; refuse on an older schema. */
+  private async requireResetProcedure(conn: Connection) {
+    const [rows] = await conn.query<RowDataPacket[]>(
+      'SELECT 1 FROM schema_migrations WHERE version=15 LIMIT 1',
+    );
+    if (!rows.length)
+      throw failure(
+        'Database migration 015 (three-account reset) is not applied. The operator must run the database migration before a reset. Nothing was deleted.',
+      );
+  }
+
+  /** Locks and returns the three preserved accounts; refuses the reset if any is missing. */
+  private async preservedAccounts(conn: Connection): Promise<PreservedRow[]> {
+    const [rows] = await conn.query<RowDataPacket[]>(
+      'SELECT id,email,full_name,role,status,password_hash FROM users WHERE LOWER(email) IN (?) ORDER BY id FOR UPDATE',
+      [RESET_PRESERVED_EMAILS],
+    );
+    const found = new Set(rows.map((r) => String(r.email).toLowerCase()));
+    const missing = RESET_PRESERVED_EMAILS.filter((e) => !found.has(e));
+    if (missing.length)
+      throw failure(
+        `Reset blocked: ${missing.length === 1 ? 'this preserved account does' : 'these preserved accounts do'} not exist: ${missing.join(', ')}. Create ${missing.length === 1 ? 'it' : 'them'} first. No backup was taken and nothing was deleted.`,
+      );
+    return rows.map((r) => ({
+      id: Number(r.id),
+      email: String(r.email),
+      fullName: String(r.full_name),
+      role: r.role,
+      status: r.status,
+      passwordHash: String(r.password_hash),
+    }));
+  }
+
+  /** Restores the dump into a guarded scratch database and proves it matches the live data. */
+  private async verifyRestore(file: string) {
+    const live = this.options.database;
+    const scratch = scratchDatabaseName(live, RESTORE_SUFFIX);
+    assertScratchTarget(live, scratch, RESTORE_SUFFIX);
+    const admin = await mysql.createConnection({ ...this.options.server, connectTimeout: 5000 });
+    let owned = false;
+    try {
+      // A leftover copy from an interrupted attempt is ours (name is derived from this database).
+      await admin.query(`DROP DATABASE IF EXISTS \`${scratch}\``);
+      await admin.query(
+        `CREATE DATABASE \`${scratch}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+      );
+      owned = true;
+      assertScratchTarget(live, scratch, RESTORE_SUFFIX);
+      await restoreDatabase(this.options.server, file, scratch, {
+        binDir: this.options.binDir,
+        inPlace: true,
+      });
+      const [before, after] = await Promise.all([
+        fingerprintDatabase(this.options.server, live),
+        fingerprintDatabase(this.options.server, scratch),
+      ]);
+      // Sessions can be touched by other requests; everything else is locked by this transaction.
+      delete before.tables.sessions;
+      delete after.tables.sessions;
+      const problems = compareFingerprints(before, after);
+      if (problems.length)
+        throw failure(
+          `Restore verification failed; nothing was deleted. The restored copy differs: ${problems.slice(0, 3).join('; ')}`,
+        );
+      return {
+        tables: Object.keys(after.tables).length + 1,
+        rows: Object.values(after.tables).reduce((n, t) => n + t.rows, 0),
+        triggers: after.triggers.length,
+        routines: after.routines?.length ?? 0,
+      };
+    } finally {
+      if (owned) {
+        assertScratchTarget(live, scratch, RESTORE_SUFFIX);
+        await admin.query(`DROP DATABASE IF EXISTS \`${scratch}\``).catch(() => {});
+      }
+      await admin.end().catch(() => {});
+    }
+  }
+
+  private async snapshot(conn: Connection, preservedIds: number[]) {
     const [found] = await conn.query<RowDataPacket[]>(
       "SELECT TABLE_NAME AS name,ENGINE AS engine FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE' ORDER BY TABLE_NAME",
     );
@@ -138,7 +234,8 @@ export class CompetitionReset {
       if (table.startsWith('maintenance_') && rows.length)
         throw failure('Unexpected maintenance authorization. Operator review is required.');
       if (!retained.has(table)) counts[table] = rows.length;
-      if (table === 'users') counts.users = Math.max(0, rows.length - 1);
+      if (table === 'users')
+        counts.users = rows.filter((r) => !preservedIds.includes(Number(r.id))).length;
       if (table !== 'sessions' && !table.startsWith('maintenance_'))
         hashes.push(
           table +
@@ -199,7 +296,13 @@ export class CompetitionReset {
       await conn.beginTransaction();
       await conn.query('SELECT id FROM competition WHERE id=1 FOR UPDATE');
       const credentialHash = await this.authorize(conn, actor, password);
-      const snap = await this.snapshot(conn);
+      await this.requireResetProcedure(conn);
+      // Refuse before any backup if one of the accounts to keep is missing.
+      const preserved = await this.preservedAccounts(conn);
+      const snap = await this.snapshot(
+        conn,
+        preserved.map((p) => p.id),
+      );
       const backup = await backupDatabase(this.options.server, this.options.database, {
         dir,
         binDir: this.options.binDir,
@@ -207,14 +310,23 @@ export class CompetitionReset {
       });
       verifyDumpComplete(backup.file);
       await verifyBackupChecksum(backup.file);
+      const restored = await this.verifyRestore(backup.file);
       const token = randomBytes(32).toString('hex');
       const expires = Date.now() + 10 * 60_000;
       const preview: ResetPreview = {
         token,
         expiresAt: new Date(expires).toISOString(),
+        database: this.options.database,
         counts: snap.counts,
-        preservedEmail: RESET_ADMIN_EMAIL,
-        backup: { name: basename(backup.file), sha256: backup.sha256, bytes: backup.bytes },
+        preservedAccounts: preserved.map(publicAccount),
+        backup: {
+          name: basename(backup.file),
+          sha256: backup.sha256,
+          bytes: backup.bytes,
+          checksumVerified: true,
+          restoreVerified: true,
+          restored,
+        },
       };
       this.log(dir, {
         event: 'reset.preview_backed_up',
@@ -223,8 +335,10 @@ export class CompetitionReset {
         database: this.options.database,
         instance,
         counts: snap.counts,
+        preserved: preserved.map(({ id, email, role, status }) => ({ id, email, role, status })),
         backup: backup.file,
         sha256: backup.sha256,
+        restoreVerified: restored,
       });
       for (const [key, t] of this.tickets)
         if (t.expires < Date.now() || t.actorId === actor.id) this.tickets.delete(key);
@@ -236,6 +350,7 @@ export class CompetitionReset {
         credentialHash,
         expires,
         backup,
+        preserved,
         preview,
       });
       await conn.rollback();
@@ -272,7 +387,12 @@ export class CompetitionReset {
       await conn.beginTransaction();
       await conn.query('SELECT id FROM competition WHERE id=1 FOR UPDATE');
       const currentHash = await this.authorize(conn, actor, input.password);
-      const snap = await this.snapshot(conn);
+      await this.requireResetProcedure(conn);
+      const preserved = await this.preservedAccounts(conn);
+      const snap = await this.snapshot(
+        conn,
+        preserved.map((p) => p.id),
+      );
       if (snap.hash !== t.snapshot || currentHash !== t.credentialHash)
         throw failure(
           'Data changed after the preview. No data was deleted. Create and review a fresh preview and backup.',
@@ -292,6 +412,7 @@ export class CompetitionReset {
         database: this.options.database,
         instance,
         counts: snap.counts,
+        preserved: preserved.map(({ id, email, role, status }) => ({ id, email, role, status })),
         backup: t.backup.file,
         sha256: t.backup.sha256,
       });
@@ -301,15 +422,24 @@ export class CompetitionReset {
         key,
         actor.id,
       ]);
+      // Exactly the preserved accounts remain, with the same ID, e-mail, password hash, role and status.
       const [survivors] = await conn.query<RowDataPacket[]>(
-        'SELECT id,email,role,password_hash FROM users',
+        'SELECT id,email,role,status,password_hash FROM users ORDER BY id',
       );
+      const expected = t.preserved;
       if (
-        survivors.length !== 1 ||
-        survivors[0]?.id !== actor.id ||
-        survivors[0]?.email.toLowerCase() !== RESET_ADMIN_EMAIL ||
-        survivors[0]?.role !== 'admin' ||
-        survivors[0]?.password_hash !== hash
+        survivors.length !== expected.length ||
+        survivors.some((s, i) => {
+          const p = expected[i]!;
+          return (
+            Number(s.id) !== p.id ||
+            s.email !== p.email ||
+            s.role !== p.role ||
+            s.status !== p.status ||
+            s.password_hash !== p.passwordHash
+          );
+        }) ||
+        !survivors.some((s) => Number(s.id) === actor.id && s.password_hash === hash)
       )
         throw failure('Reset survivor verification failed. Changes rolled back.');
       for (const table of tables.filter((n) => !retained.has(n) && n !== 'users')) {
@@ -327,7 +457,7 @@ export class CompetitionReset {
           event: 'reset.completed',
           request: key,
           instance,
-          preservedEmail: RESET_ADMIN_EMAIL,
+          preserved: expected.map(({ id, email }) => ({ id, email })),
         });
       } catch {
         return { reset: true, signInRequired: true, maintenanceLogNeedsReconciliation: true };

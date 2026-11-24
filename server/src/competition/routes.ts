@@ -48,7 +48,7 @@ export function competitionRouter(pool: Pool, maintenance?: CompetitionReset) {
         throw new RuleError(
           403,
           'FORBIDDEN',
-          'Only the preserved administrator may request a reset.',
+          'Only the authorized reset administrator may request a reset.',
         );
       if (!maintenance)
         throw new RuleError(

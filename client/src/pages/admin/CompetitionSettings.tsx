@@ -3,15 +3,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   COMPETITION_LABELS,
   RESET_ADMIN_EMAIL,
-  RESET_PHRASE,
   type CompetitionStatus,
-  type ResetPreview,
   type ResultsResponse,
 } from '@judging/shared';
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
-import { Alert, Button, Card, PasswordField, TextField } from '../../components/ui';
+import { Alert, Button, Card } from '../../components/ui';
 import { Modal } from '../../components/Modal';
+import { ResetCompetition } from './ResetCompetition';
 
 const RECOMMENDED_JUDGES = 3;
 
@@ -28,10 +27,6 @@ export function CompetitionSettings() {
   });
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
-  const [password, setPassword] = useState(''),
-    [phrase, setPhrase] = useState('');
-  const [preview, setPreview] = useState<ResetPreview | null>(null),
-    [final, setFinal] = useState(false);
   const [transition, setTransition] = useState<{
     target: 'judging_open' | 'closed';
     rowVersion: number;
@@ -72,30 +67,6 @@ export function CompetitionSettings() {
       });
       setTransition(null);
       await cache.invalidateQueries();
-    });
-  }
-  async function prepare() {
-    await run(async () => {
-      setPreview(null);
-      setPhrase('');
-      const data = await api<ResetPreview>('/api/admin/competition/reset/preview', {
-        method: 'POST',
-        body: { password },
-      });
-      setPassword('');
-      setPreview(data);
-    });
-  }
-  async function execute() {
-    if (!preview) return;
-    await run(async () => {
-      await api('/api/admin/competition/reset/execute', {
-        method: 'POST',
-        body: { token: preview.token, password, phrase, confirmed: true },
-      });
-      setPassword('');
-      cache.clear();
-      window.location.assign('/login');
     });
   }
   return (
@@ -146,106 +117,10 @@ export function CompetitionSettings() {
         )}
       </Card>
       {user?.email.toLowerCase() === RESET_ADMIN_EMAIL && (
-        <Card className="border-ahly-red/40">
-          <h2 className="text-lg font-semibold text-ahly-red-dark">Danger Zone</h2>
-          <h3 className="mt-3 font-semibold">Reset Competition</h3>
-          <p className="mt-2 text-sm text-muted">
-            Deletes all teams, projects, assignments, evaluations, history, corrections, audit
-            events, rubrics and other users. Only {RESET_ADMIN_EMAIL} and their existing password
-            remain. A complete verified backup is required.
-          </p>
-          {!c?.resetExecutionEnabled && (
-            <div className="mt-3">
-              <Alert tone="warning">
-                {c?.maintenanceAvailable === false
-                  ? 'Reset execution is disabled on this server.'
-                  : 'Reset execution is disabled pending operator approval. You can create a backup and deletion preview without deleting data.'}
-              </Alert>
-            </div>
-          )}
-          {c?.maintenanceAvailable === false && (
-            <Alert tone="info">
-              Maintenance tools are disabled on this server. Contact the platform operator for
-              backup or recovery.
-            </Alert>
-          )}
-          {!preview ? (
-            <div className="mt-4 space-y-3">
-              <PasswordField
-                label="Current password for backup and preview"
-                disabled={busy || c?.maintenanceAvailable === false}
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <Button
-                variant="secondary"
-                disabled={busy || !password || c?.maintenanceAvailable === false}
-                onClick={() => void prepare()}
-              >
-                {busy ? 'Creating verified backup…' : 'Create backup and deletion preview'}
-              </Button>
-            </div>
-          ) : (
-            <div className="mt-4 space-y-4">
-              <Alert tone="warning" title="Review deletion preview">
-                No records have been deleted. This preview expires{' '}
-                {new Date(preview.expiresAt).toLocaleTimeString()}. Any data change requires a new
-                preview.
-              </Alert>
-              <dl className="grid grid-cols-2 gap-2 text-sm">
-                {Object.entries(preview.counts).map(([name, n]) => (
-                  <div key={name} className="flex justify-between gap-2">
-                    <dt>{name.replaceAll('_', ' ')}</dt>
-                    <dd className="font-semibold">{n}</dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="break-all text-xs">
-                Verified backup: {preview.backup.name}
-                <br />
-                SHA-256: {preview.backup.sha256}
-                <br />
-                {preview.backup.bytes.toLocaleString()} bytes
-              </p>
-              <p className="text-sm font-semibold">Preserve: {preview.preservedEmail}</p>
-              <PasswordField
-                label="Verify current password again"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <TextField
-                label={`Type ${RESET_PHRASE}`}
-                autoComplete="off"
-                value={phrase}
-                onChange={(e) => setPhrase(e.target.value)}
-              />
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  variant="danger"
-                  disabled={
-                    busy || !c?.resetExecutionEnabled || phrase !== RESET_PHRASE || !password
-                  }
-                  onClick={() => setFinal(true)}
-                >
-                  Reset Competition…
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    setPreview(null);
-                    setPassword('');
-                    setPhrase('');
-                  }}
-                >
-                  Discard preview
-                </Button>
-              </div>
-            </div>
-          )}
-        </Card>
+        <ResetCompetition
+          maintenanceAvailable={c?.maintenanceAvailable !== false}
+          executionEnabled={!!c?.resetExecutionEnabled}
+        />
       )}
       {transition && (
         <Modal
@@ -267,29 +142,6 @@ export function CompetitionSettings() {
             {transition.target === 'closed'
               ? 'Closing makes results read-only and disables judging, administrative corrections and reopening. It cannot be reversed through the application.'
               : 'Starting freezes the selected published rubric for every new evaluation. Rubric changes are disabled until the next competition reset.'}
-          </p>
-          {error && <Alert tone="error">{error}</Alert>}
-        </Modal>
-      )}
-      {final && (
-        <Modal
-          title="Final confirmation — delete competition data?"
-          onClose={() => setFinal(false)}
-          canClose={!busy}
-          footer={
-            <>
-              <Button variant="secondary" disabled={busy} onClick={() => setFinal(false)}>
-                Cancel
-              </Button>
-              <Button variant="danger" disabled={busy} onClick={() => void execute()}>
-                {busy ? 'Resetting…' : 'Confirm permanent reset'}
-              </Button>
-            </>
-          }
-        >
-          <p>
-            Delete the records in the preview and retain only {RESET_ADMIN_EMAIL}? Everyone will be
-            signed out. Recovery requires the verified backup.
           </p>
           {error && <Alert tone="error">{error}</Alert>}
         </Modal>

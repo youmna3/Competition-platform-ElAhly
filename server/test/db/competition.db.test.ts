@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
 import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
-import { mkdtempSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, appendFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultRubricContent, RESET_PHRASE } from '@judging/shared';
@@ -43,6 +43,13 @@ let pool: Pool;
 const password = 'Disposable-Admin-Password-1!';
 const email = 'youmna54@gmail.com';
 let actor: { id: number; email: string };
+// The two other preserved accounts: an administrator without reset permission and a judge.
+const nada = { email: 'nada.hussien@ischooltech.com', password: 'Disposable-Nada-Password-2!' };
+const abdelrhman = {
+  email: 'abdelrhman.elagan@ischooltech.com',
+  password: 'Disposable-Abdo-Password-3!',
+};
+const preservedIds: number[] = [];
 let options: MaintenanceOptions;
 const dir = mkdtempSync(join(tmpdir(), 'judging-lifecycle-test-'));
 beforeAll(async () => {
@@ -54,6 +61,17 @@ beforeAll(async () => {
     [email, bcrypt.hashSync(password, 4)],
   );
   actor = { id: u.insertId, email };
+  preservedIds.push(u.insertId);
+  for (const [who, role] of [
+    [nada, 'admin'],
+    [abdelrhman, 'judge'],
+  ] as const) {
+    const [p] = await pool.query<ResultSetHeader>(
+      "INSERT INTO users(email,full_name,password_hash,role,must_change_password,created_by) VALUES(?,'Preserved',?,?,FALSE,?)",
+      [who.email, bcrypt.hashSync(who.password, 4), role, actor.id],
+    );
+    preservedIds.push(p.insertId);
+  }
   options = {
     server: adminServer,
     database: TEST_DB,
@@ -79,6 +97,8 @@ it('enforces the entire lifecycle, corrections, immutable history and three judg
     );
     judges.push({ id: u.insertId, email: `life${i}@example.com` });
   }
+  // A preserved account created by a user that the reset deletes.
+  await pool.query('UPDATE users SET created_by=? WHERE id=?', [judges[1]!.id, preservedIds[2]]);
   await expect(transitionCompetition(pool, actor, 'judging_open', 1)).rejects.toMatchObject({
     code: 'COMPETITION_NOT_READY',
   });
@@ -174,10 +194,25 @@ it('requires preserved-admin authorization, fresh passwords, a verified backup, 
     reset.prepare({ id: 999, email: 'another@example.com' }, 'session', password),
   ).rejects.toMatchObject({ status: 403 });
   await expect(reset.prepare(actor, 'session', 'wrong')).rejects.toMatchObject({ status: 403 });
+  // Being preserved does not grant reset permission.
+  await expect(
+    reset.prepare({ id: preservedIds[1]!, email: nada.email }, 'session', nada.password),
+  ).rejects.toMatchObject({ status: 403 });
   const preview = await reset.prepare(actor, 'session', password);
   expect(preview.counts.teams).toBe(1);
-  expect(preview.counts.users).toBe(2);
+  expect(preview.counts.users).toBe(2); // the two life judges; the three preserved are excluded
+  expect(preview.database).toBe(TEST_DB);
   expect(preview.backup.bytes).toBeGreaterThan(1000);
+  expect(preview.backup).toMatchObject({ checksumVerified: true, restoreVerified: true });
+  expect(preview.backup.restored.triggers).toBeGreaterThan(10);
+  expect(preview.backup.restored.routines).toBeGreaterThanOrEqual(1);
+  expect(preview.preservedAccounts.map((a) => [a.id, a.email, a.role, a.status])).toEqual([
+    [preservedIds[0], email, 'admin', 'active'],
+    [preservedIds[1], nada.email, 'admin', 'active'],
+    [preservedIds[2], abdelrhman.email, 'judge', 'active'],
+  ]);
+  // No password hashes leave the server.
+  expect(JSON.stringify(preview)).not.toMatch(/[$]2[aby][$]/);
   const input = { token: preview.token, password, phrase: RESET_PHRASE, confirmed: true };
   const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11 * 60_000);
   try {
@@ -224,6 +259,63 @@ it('requires preserved-admin authorization, fresh passwords, a verified backup, 
     (await pool.query<RowDataPacket[]>('SELECT COUNT(*) n FROM maintenance_reset_context'))[0][0]
       ?.n,
   ).toBe(0);
+});
+
+it('refuses preview and execution when any preserved account is missing', async () => {
+  const reset = new CompetitionReset(options);
+  const backups = () =>
+    readdirSync(join(dir, 'competition-maintenance')).filter((f) => f.endsWith('.sql')).length;
+  const p = await reset.prepare(actor, 'missing-session', password);
+  const before = backups();
+  await pool.query("UPDATE users SET email='renamed@example.com' WHERE id=?", [preservedIds[2]]);
+  try {
+    await expect(reset.prepare(actor, 'missing-session', password)).rejects.toThrow(
+      /preserved account does not exist: abdelrhman[.]elagan@ischooltech[.]com/,
+    );
+    expect(backups()).toBe(before); // refused before any backup was taken
+    await expect(
+      reset.execute(actor, 'missing-session', {
+        token: p.token,
+        password,
+        phrase: RESET_PHRASE,
+        confirmed: true,
+      }),
+    ).rejects.toThrow(/preserved account does not exist/);
+    // The procedure enforces the same rule even with an otherwise valid permit.
+    const [[c]] = await pool.query<RowDataPacket[]>('SELECT instance_id FROM competition');
+    await pool.query(
+      'INSERT INTO maintenance_reset_permits(permit_hash,instance_id,actor_id,backup_sha256,expires_at) VALUES(?,?,?,?,NOW(3)+INTERVAL 5 MINUTE)',
+      ['c'.repeat(64), c!.instance_id, actor.id, 'd'.repeat(64)],
+    );
+    await expect(
+      pool.query('CALL reset_competition(?,?,?,?)', [
+        TEST_DB,
+        c!.instance_id,
+        'c'.repeat(64),
+        actor.id,
+      ]),
+    ).rejects.toThrow(/preserved account is missing/);
+    expect((await pool.query<RowDataPacket[]>('SELECT COUNT(*) n FROM teams'))[0][0]?.n).toBe(1);
+    expect((await pool.query<RowDataPacket[]>('SELECT COUNT(*) n FROM users'))[0][0]?.n).toBe(5);
+  } finally {
+    await pool.query('DELETE FROM maintenance_reset_permits');
+    await pool.query('UPDATE users SET email=? WHERE id=?', [abdelrhman.email, preservedIds[2]]);
+  }
+});
+
+it('refuses a preview on a database without migration 015, before taking a backup', async () => {
+  const [[row]] = await pool.query<RowDataPacket[]>(
+    'SELECT * FROM schema_migrations WHERE version=15',
+  );
+  expect(row).toBeDefined();
+  await pool.query('DELETE FROM schema_migrations WHERE version=15');
+  try {
+    await expect(
+      new CompetitionReset(options).prepare(actor, 'old-schema', password),
+    ).rejects.toThrow(/migration 015/);
+  } finally {
+    await pool.query('INSERT INTO schema_migrations SET ?', [row]);
+  }
 });
 
 it('rolls back every prior deletion and maintenance authorization if a later deletion fails', async () => {
@@ -276,15 +368,26 @@ it('backs up before deletion, resets only the disposable database, preserves cre
   });
   const admin = await signIn(app, email, password);
   const other = await signIn(app, 'life1@example.com', password);
+  const nadaSession = await signIn(app, nada.email, nada.password);
   expect((await other.post('/api/admin/competition/reset/preview').send({ password })).status).toBe(
     403,
   );
+  // A preserved administrator other than the reset administrator is refused too.
+  expect(
+    (
+      await nadaSession
+        .post('/api/admin/competition/reset/preview')
+        .send({ password: nada.password })
+    ).status,
+  ).toBe(403);
   expect(
     (await request(app).post('/api/admin/competition/reset/preview').send({ password })).status,
   ).toBe(401);
-  const before = (
-    await pool.query<RowDataPacket[]>('SELECT password_hash FROM users WHERE id=?', [actor.id])
-  )[0][0]!.password_hash;
+  const [preservedBefore] = await pool.query<RowDataPacket[]>(
+    'SELECT id,email,role,status,password_hash FROM users WHERE id IN (?) ORDER BY id',
+    [preservedIds],
+  );
+  expect(preservedBefore).toHaveLength(3);
   const [triggers] = await pool.query<RowDataPacket[]>(
     'SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() ORDER BY TRIGGER_NAME',
   );
@@ -307,9 +410,14 @@ it('backs up before deletion, resets only the disposable database, preserves cre
   expect(result.status, JSON.stringify(result.body)).toBe(200);
   expect((await other.get('/api/auth/me')).status).toBe(401);
   expect((await admin.get('/api/auth/me')).status).toBe(401);
-  const [users] = await pool.query<RowDataPacket[]>('SELECT email,password_hash,role FROM users');
-  expect(users).toHaveLength(1);
-  expect(users[0]).toMatchObject({ email, password_hash: before, role: 'admin' });
+  expect((await nadaSession.get('/api/auth/me')).status).toBe(401);
+  // Exactly the three preserved accounts remain with unchanged IDs, e-mails, hashes, roles and status.
+  const [users] = await pool.query<RowDataPacket[]>(
+    'SELECT id,email,role,status,password_hash,created_by FROM users ORDER BY id',
+  );
+  expect(users.map(({ created_by: _c, ...u }) => u)).toEqual(preservedBefore);
+  expect(users.find((u) => u.id === preservedIds[2])?.created_by).toBeNull();
+  expect(users.find((u) => u.id === preservedIds[1])?.created_by).toBe(actor.id);
   for (const table of [
     'teams',
     'team_judges',
@@ -337,6 +445,12 @@ it('backs up before deletion, resets only the disposable database, preserves cre
   expect(after).toEqual(triggers);
   expect((await pool.query<RowDataPacket[]>('SELECT @@foreign_key_checks AS n'))[0][0]?.n).toBe(1);
   expect((await (await signIn(app, email, password)).get('/api/admin/overview')).status).toBe(200);
+  // The other two preserved accounts sign in with their unchanged passwords
+  // (sign-ins write new audit events, so this runs after the emptiness checks).
+  for (const who of [nada, abdelrhman])
+    expect((await (await signIn(app, who.email, who.password)).get('/api/auth/me')).status).toBe(
+      200,
+    );
   const emptyResults = await getResults(pool, { sort: 'rank', dir: 'asc' });
   expect(emptyResults.official.teams).toEqual([]);
   expect(emptyResults.provisional).toEqual([]);
@@ -352,4 +466,28 @@ it('backs up before deletion, resets only the disposable database, preserves cre
   expect(log).toContain('reset.completed');
   expect(log).not.toContain(password);
   expect((await createDraft(pool, actor)).draft).not.toBeNull();
+  // Turning maintenance off again (no maintenance options) disables the reset API entirely.
+  const closed = createApp({
+    environment: 'test',
+    version: 'test',
+    checkDatabase: async () => ({
+      status: 'ok',
+      database: TEST_DB,
+      serverVersion: 'test',
+      latencyMs: 0,
+    }),
+    auth: {
+      pool,
+      config: testAuthConfig,
+      store: new MySqlSessionStore(pool, testAuthConfig.maxSessionMs),
+    },
+  });
+  const again = await signIn(closed, email, password);
+  expect((await again.get('/api/admin/competition')).body).toMatchObject({
+    maintenanceAvailable: false,
+    resetExecutionEnabled: false,
+  });
+  expect((await again.post('/api/admin/competition/reset/preview').send({ password })).status).toBe(
+    503,
+  );
 });

@@ -69,6 +69,8 @@ export const required = [
     '011_dynamic_rubrics',
     '012_variable_questions',
     '013_competition_lifecycle',
+    '014_numeric_points',
+    '015_reset_preserved_accounts',
   ].map((n) => `server/migrations/${n}.sql`),
 ];
 export function allowedPath(path) {
